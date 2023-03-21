@@ -8,10 +8,14 @@ async function main() {
     console.log('looking for ' + terms.join(', '));
 
     let data: string[][] = [];
-    let nodata: string[] = [];
+    let rawResults = Object.fromEntries(terms.map(t => [t, 0]));
 
     let results: record[] = [];
-    let tasks = terms.map(term => query(term).then(matches => results.push(...matches)))
+    let tasks = terms.map(term => query(term).then(matches => {
+        rawResults[term] = matches.length;
+        results.push(...matches)
+    }));
+
     await Promise.all(tasks)
 
     let matches = results
@@ -22,6 +26,11 @@ async function main() {
 
     matches = await filterAsync(matches, isDescriptionClean);
 
+    for (let term of terms) {
+        let num = matches.filter(m => m.name.includes(term)).length;
+        console.log(`${term}: ${rawResults[term]} matches, ${num} results`);
+    }
+
     if (matches.length > 0)
         data.push(...matches.map(m => [m.id, m.seeders, humanSize(m.size), m.name, humanDate(m.added)]));
 
@@ -29,22 +38,24 @@ async function main() {
         return w.map((x, i) => i == 0 ? x : Math.max(x, row[i].length))
     }, [0, 5, 0, 0, 0])
 
-    console.log([
-        '    ',
-        bold('seeds'.padStart(widths[1])),
-        bold('size'.padStart(widths[2])),
-        bold('name'.padEnd(widths[3])),
-        bold('age')].join('  ')
-    );
-
-    for (let row of data) {
+    if (data.length) {
         console.log([
-            link('https://thepiratebay.org/description.php?id=' + row[0], 'link'),
-            row[1].padStart(widths[1]),
-            row[2].padStart(widths[2]),
-            row[3].padEnd(widths[3]),
-            row[4]
-        ].join('  '));
+            '    ',
+            bold('seeds'.padStart(widths[1])),
+            bold('size'.padStart(widths[2])),
+            bold('name'.padEnd(widths[3])),
+            bold('age')].join('  ')
+        );
+
+        for (let row of data) {
+            console.log([
+                link('https://thepiratebay.org/description.php?id=' + row[0], 'link'),
+                row[1].padStart(widths[1]),
+                row[2].padStart(widths[2]),
+                row[3].padEnd(widths[3]),
+                row[4]
+            ].join('  '));
+        }
     }
 }
 
