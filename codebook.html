@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Code book</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            document.body.appendChild(can)
+
+            return ctx;
+        }
+    </script>
+
+    <script type="text/javascript">
+
+        const cypher = '23456789BCDFGHJKMNPQRTVWXY';
+        const alpha = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+        function* make(n, generateRandom, stringify) {
+            const set = new Set();
+
+            let i = 0;
+            let fails = 0;
+            while (i < n) {
+                let candidate = generateRandom();
+                let hash = stringify(candidate);
+                if (!set.has(hash)) {
+                    ++i;
+                    set.add(hash)
+                    yield candidate;
+                }
+                else {
+                    // console.log('hit a double: ', hash)
+                    if (++fails > 100)
+                        throw new Error("Can't generate a new value")
+                }
+            }
+        }
+
+        let numPages = 14;
+
+        let setup = [...zip([...make(numPages, makeCode, x => x)]
+            , [...make(numPages, generateCypher, x => x.map(x => x.join('')).join())])];
+
+
+        const A4 = { width: 210, height: 297 };
+        const ppcm = 120;
+
+        let config = {
+            page: { width: (ppcm * A4.width / 10) | 0, height: (ppcm * A4.height / 10) | 0 }
+        }
+
+        render(front, ...setup.map(page => (ctx, n, width, height) => renderPage(ctx, n, page, width, height)), back);
+
+        function render(...pages) {
+            let i = 0;
+            const width = config.page.width / 4;
+            const height = config.page.height / 2;
+
+            let ctx = null;
+            let n = 0;
+            for (let page of pages) {
+                let i = n % 8;
+                if (i == 0) {
+                    ctx = makeCanvas(config.page.width, config.page.height, false);
+
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, config.page.width, config.page.height)
+                    ctx.translate(0, (config.page.height / 2) | 0);
+                }
+
+                ctx.save();
+                if (i > 2 & i < 7) {
+                    // top row flipped
+                    ctx.translate(((7 - i) * config.page.width / 4) | 0, 0)
+                    ctx.scale(-1, -1)
+                }
+                else {
+                    // bottom row normal orientation
+                    ctx.translate((((i > 2) ? 0 : (i + 1)) * config.page.width / 4) | 0, 0)
+                }
+
+                ctx.rect(0, 0, width, height)
+                ctx.clip();
+                ctx.strokeStyle = '#ccc'
+                ctx.stroke();
+                page(ctx, n, width, height)
+                ctx.restore();
+                ++n
+            }
+        }
+
+        function front(ctx, n, width, height) {
+
+            let lh = height / 10;
+            let l0 = height / 3;
+            let lines = ['Code', 'Book'];
+
+            ctx.font = `bold ${lh}px Bahnschrift`;
+            console.log(ctx.font)
+
+            ctx.fillStyle = 'black';
+            ctx.fillRect(-width, l0 - lh * 1.2, width * 3, (lines.length + .7) * lh)
+            ctx.fillStyle = 'white';
+
+            let l = l0
+            for (let line of lines) {
+                center(ctx, line, width, l)
+                l += lh;
+            }
+
+            ctx.fillStyle = 'black';
+            ctx.font = `bold ${lh / 3}px Bahnschrift`;
+            center(ctx, new Date().getFullYear(), width, height - lh / 3);
+        }
+
+        function center(ctx, text, width, y) {
+            let tw = ctx.measureText(text).width;
+            ctx.fillText(text, (width - tw) / 2, y)
+        }
+
+        function back(ctx, n, width, height) {
+            let lh = height / 30;
+            ctx.fillStyle = 'black';
+            ctx.font = `bold ${lh}px Bahnschrift`;
+            ctx.fillText("Notes:", lh, lh * 3);
+
+            ctx.save()
+            ctx.translate(0, height)
+            ctx.rotate(-Math.PI / 2);
+
+
+            ctx.font = `bold ${lh * 5}px Bahnschrift`;
+            const code = makeCode() + makeCode() + makeCode()
+            ctx.fillStyle = '#ccc';
+            ctx.fillText(code, 0, width - lh / 2)
+            ctx.fillStyle = '#ddd';
+            ctx.fillText(code, height / 300, width - lh / 2 - height / 300);
+            ctx.restore()
+
+
+            let l = lh * 5;
+            while (l < height - lh * 2) {
+                ctx.fillRect(lh, l, width - 2 * lh, 1);
+                l += lh * 2
+            }
+        }
+
+        function renderPage(ctx, n, page, width, height) {
+            const [code, [encode, decode]] = page;
+
+            let lh = height / 20;
+            ctx.fillStyle = 'black';
+
+            ctx.fillRect(0, 0, width, lh * 2);
+
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${lh}px Bahnschrift`;
+            center(ctx, code, width, lh * 1.4);
+
+            let l = lh * 4;
+            let x = 1.3 * lh;
+
+            ctx.font = `bold ${lh / 2}px Bahnschrift`;
+
+
+            ctx.fillStyle = '#888';
+            ctx.fillText('enc', x, l - 2 * lh / 3);
+
+            for (let [from, to] of encode) {
+
+                ctx.fillStyle = 'black';
+                ctx.fillText(from, x, l);
+                ctx.fillText(to, x + lh * 1.1, l);
+
+                ctx.fillStyle = '#888';
+                ctx.fillText('⇒', x + lh / 2, l);
+
+                l += lh * .55;
+            }
+
+            l = lh * 4;
+            x = width / 2 + lh
+
+            ctx.fillStyle = '#888';
+            ctx.fillText('dec', x, l - 2 * lh / 3);
+
+            for (let [from, to] of decode) {
+
+                ctx.fillStyle = 'black';
+                ctx.fillText(from, x, l);
+                ctx.fillText(to, x + lh * 1.1, l);
+
+                ctx.fillStyle = '#888';
+                ctx.fillText('⇒', x + lh / 2, l);
+
+                l += lh * .55;
+            }
+
+            lh = height / 50;
+
+            ctx.fillStyle = 'black';
+            ctx.font = `${lh}px Bahnschrift`;
+            center(ctx, n, width, height - 2 * lh);
+        }
+
+        function makeCode() {
+            return [...make(3, () => cypher[rnd(cypher.length)], x => x)].join('')
+        }
+
+        function generateCypher() {
+            let data = [...zip(shuffle(alpha.split('')), shuffle(cypher.split('')))];
+
+            let encode = data;
+            let decode = [...data];
+
+            encode.sort(([a, _], [b, __]) => a.localeCompare(b));
+            decode.sort(([_, a], [__, b]) => a.localeCompare(b));
+
+            return [encode, decode.map(([a, b]) => [b, a])];
+        }
+
+        function* zip(a, b) {
+            let len = Math.max(a.length, b.length);
+
+            for (let i = 0; i < len; ++i) {
+                yield [a[i % a.length], b[i % b.length]]
+            }
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+
+
+    </script>
+</body>
+
+</html>
