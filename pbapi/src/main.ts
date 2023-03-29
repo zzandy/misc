@@ -99,7 +99,7 @@ function isPromisingName(record: record) {
 }
 
 function containsStopwords(text: string) {
-    return !!text.match(/hdcam|camrip|pre-dvdrip|\W(HD|HQ)?cam\W|hd[-.]?ts|hindi/i);
+    return !!text.match(/hdcam|camrip|pre-dvdrip|\W(HD|HQ)?cam\W|hd[-.]?t(s|c)|hindi/i);
 }
 
 function isRecentEnough(record: record) {
