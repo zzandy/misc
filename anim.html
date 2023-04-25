@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Anim</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+
+        // canvas w/ hex
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            const marReps = 20;
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let doRender = false;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < marReps) {
+                    acc -= fixedDelta;
+                    doRender ||= fixedUpdate(fixedDelta);
+                }
+
+                if (reps >= marReps) acc = 0;
+
+                if (doRender) {
+                    render(delta);
+                }
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script type="text/javascript">
+
+        class Point {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+        }
+
+        class Anim {
+            #render;
+
+            constructor(origin, duration, render) {
+                this.origin = origin;
+                this.pos = 0;
+                this.duration = duration;
+                this.#render = render;
+            }
+
+            advance(delta) {
+                this.pos = (this.pos + delta) % this.duration;
+            }
+
+            render(ctx) {
+                this.#render(ctx, this.pos / this.duration);
+            }
+        }
+
+        function pad(t) {
+            let padding = .1;
+            return t < padding ? 0
+                : t > (1 - padding) ? 1
+                    : (t - padding) / (1 - padding * 2)
+        }
+
+    </script>
+
+    <script type="text/javascript">
+        const ctx = fullscreenCanvas();
+        const w = 500;
+
+        const anims = [
+            new Anim(new Point(40, 40), 2000, linear),
+            new Anim(new Point(40, 140), 2000, perlinOut),
+            new Anim(new Point(40, 240), 2000, perlinIn),
+            new Anim(new Point(40, 340), 2000, perlinInOut),
+            new Anim(new Point(40, 440), 2000, doublePerlinInOut),
+        ];
+
+        loop(60, update, render);
+
+        function update(delta) {
+            for (let anim of anims) anim.advance(delta);
+
+            return true;
+        }
+
+        function render(delta) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+            for (let anim of anims) {
+                ctx.save();
+                ctx.translate(anim.origin.x, anim.origin.y)
+
+                anim.render(ctx);
+
+                ctx.restore();
+            }
+        }
+
+        function linear(ctx, t) {
+            demo(ctx, 'red', t, t => t);
+        }
+
+        function perlinIn(ctx, t) {
+            demo(ctx, 'green', t, t => (perlinSlope(.5 + t / 2) - .5) * 2);
+        }
+
+        function perlinOut(ctx, t) {
+            demo(ctx, 'blue', t, t => (perlinSlope(t / 2)) * 2);
+        }
+
+        function perlinInOut(ctx, t) {
+            demo(ctx, 'teal', t, t => perlinSlope(t));
+        }
+
+        function doublePerlinInOut(ctx, t) {
+            demo(ctx, 'purple', t, t => perlinSlope(perlinSlope(perlinSlope(t))));
+        }
+
+        function demo(ctx, color, t, fn) {
+            ctx.fillStyle = color;
+            circle(ctx, w * pad(fn(t)), 0, 20);
+            radial(ctx, w, 0, fn(t) * 2 * Math.PI, 40, 5, 0)
+            radial(ctx, w, 0, fn((t + .03) % 1) * 2 * Math.PI, 40, 5, Math.PI / 9)
+            radial(ctx, w, 0, fn((t + .06) % 1) * 2 * Math.PI, 40, 5, 2 * Math.PI / 9)
+            radial(ctx, w, 0, fn((t + .09) % 1) * 2 * Math.PI, 40, 5, 3 * Math.PI / 9)
+        }
+
+        function radial(ctx, x, y, a, r1, r2, ax) {
+            circle(ctx, x + r1 * Math.cos(a + ax), y + r1 * Math.sin(a + ax), r2);
+        }
+
+        function circle(ctx, x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        function perlinSlope(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    </script>
+</body>
+
+</html>
