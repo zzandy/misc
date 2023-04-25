@@ -1,6 +1,5 @@
 import fetch from 'node-fetch'
 import * as fs from 'fs';
-import { json } from 'stream/consumers';
 
 async function main() {
     let terms = await readTerms();

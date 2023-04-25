@@ -46,25 +46,27 @@
         ]
 
         let tinctures = [
-            '#cc0004'// Gules
-            , '#000000'// Sable
-            , '#1c40ac'// Azure
-            , '#288a00'// Vert
-            , '#84129c'// Purpure
-            , '#8b004b'// Murrey
-            , '#b22222'// Sanguine
-            , '#c67000'// Tenné
+            /*0*/'#cc0004'// Gules
+            /*1*/, '#000000'// Sable
+            /*2*/, '#1c40ac'// Azure
+            /*3*/, '#288a00'// Vert
+            /*4*/, '#84129c'// Purpure
+            /*5*/, '#8b004b'// Murrey
+            /*6*/, '#b22222'// Sanguine
+            /*7*/, '#c67000'// Tenné
         ];
 
-        let shapes = [rounded, pointy, scroll];
-        let patterns = [left, quads, diagonal, xcross, corner, cross, doublediagonal, bottom, mountains, vertical, doublevertical, horizontal, doublehorizontal, chevron, doublechevron, triangle, trinangedown, checkerboard, diamonds]
+        let badCombinations = [[0, 3, .5], [2, 4, .2], [4, 5, .1], [0, 4, .1], [0, 5, .1], [4, 6, .2], [5, 6, .1], [0, 6, 0]];
+
+        let shapes = [rounded, pointy, badge, curved];
+        let patterns = [left, quads, diagonal, xcross, corner, cross, doublediagonal, bottom, mountains, vertical, doublevertical, horizontal, doublehorizontal, chevron, doublechevron, triangle, trinangedown, checkerboard, diamonds, doublehorizon, quadsdiagonal, gyronny6, gyronny8, chevrons, ypsilon, triplet, bordure, ypsilon, stripesvertical, stripeshorizonal, stripesdiagonal]
 
         render();
 
         function render() {
             let scale = 100;
 
-            let n = 6, m = 11;
+            let n = 8, m = 11;
             for (let i = 0; i < n; ++i)
                 for (let j = 0; j < m; ++j) {
                     ctx.save();
@@ -79,12 +81,25 @@
                     ctx.stroke();
                     ctx.clip();
 
-                    let clrs = Math.random() < .1
-                        ? (Math.random() < .5 ? metals : [metals[1], metals[0]])
-                        : Math.random() < .2 ? pick(2, tinctures)
-                            : Math.random() < .5
-                                ? [pick(1, metals)[0], pick(1, tinctures)[0]]
-                                : [pick(1, tinctures)[0], pick(1, metals)[0]];
+                    let clrs = [];
+                    let approved = false;
+
+                    do {
+                        approved = true;
+                        clrs = Math.random() < .1
+                            ? [...metals]
+                            : Math.random() < .2
+                                ? pick(2, tinctures)
+                                : [pick(1, metals), pick(1, tinctures)];
+
+                        if (Math.random() < .5) clrs = [clrs[1], clrs[0]];
+
+                        if (clrs[0] == tinctures[4] || clrs[1] == tinctures[4]) approved = Math.random() < .1;
+                        if (approved) {
+                            let knownBad = badCombinations.filter(([a, b, passRate]) => clrs[0] == tinctures[a] && clrs[1] == tinctures[b] || clrs[0] == tinctures[b] && clrs[1] == tinctures[a])[0];
+                            if (knownBad) approved = Math.random() < knownBad[2];
+                        }
+                    } while (!approved);
 
                     ctx.fillStyle = clrs[0];
                     ctx.fillRect(-1, -1, 3, 3);
@@ -111,6 +126,19 @@
             ctx.closePath();
         }
 
+        function curved(ctx) {
+            ctx.beginPath();
+
+            ctx.moveTo(0, 0)
+            ctx.lineTo(1, 0)
+
+            ctx.quadraticCurveTo(1, .9, .5, 1.1)
+            ctx.quadraticCurveTo(0, .9, 0, 0)
+
+
+            ctx.closePath();
+        }
+
         function pointy(ctx) {
             ctx.beginPath();
 
@@ -126,7 +154,7 @@
             ctx.closePath();
         }
 
-        function scroll(ctx) {
+        function badge(ctx) {
             ctx.beginPath();
 
             let up = 0;
@@ -177,20 +205,27 @@
         }
 
         function quads(ctx) {
-            ctx.fillRect(-.5, -.48, 1, 1);
-            ctx.fillRect(.5, .52, 1, 1);
+            ctx.fillRect(.5, .5, -1, -1);
+            ctx.fillRect(.5, .5, 1, 1);
+        }
+
+        function quadsdiagonal(ctx) {
+            ctx.translate(.5, .5);
+            ctx.rotate(Math.PI / 4);
+            ctx.translate(-.5, -.5);
+            quads(ctx)
         }
 
         function diagonal(ctx) {
             ctx.translate(.5, .48);
-            ctx.rotate(Math.PI / 4);
+            ctx.rotate(-Math.PI / 4);
 
             ctx.fillRect(-1, -.1, 3, .2);
         }
 
         function doublediagonal(ctx) {
             ctx.translate(.5, .48);
-            ctx.rotate(Math.PI / 4);
+            ctx.rotate(-Math.PI / 4);
 
             ctx.fillRect(-1, -.3, 3, .2);
             ctx.fillRect(-1, .1, 3, .2);
@@ -261,6 +296,15 @@
             ctx.restore();
         }
 
+        function chevrons(ctx) {
+            for (let i = 0; i < 6; ++i) {
+                ctx.save()
+                ctx.translate(0, .4 * i - 1)
+                chevron(ctx)
+                ctx.restore();
+            }
+        }
+
         function triangle(ctx) {
 
             ctx.beginPath()
@@ -278,6 +322,12 @@
             ctx.lineTo(.5, 1.1)
 
             ctx.fill()
+        }
+
+        function doublehorizon(ctx) {
+            const w = .13
+            ctx.fillRect(0, .5 - w, 1, -1);
+            ctx.fillRect(0, .5, 1, w)
         }
 
         function checkerboard(ctx) {
@@ -317,6 +367,98 @@
             ctx.scale(1 / 100, 1 / 100)
             ctx.fillStyle = pat;
             ctx.fillRect(0, 0, 300, 300)
+        }
+
+        function ypsilon(ctx) {
+            const a = .9;
+            const w = .25;
+
+            ctx.translate(.5, .4);
+
+            ctx.fillRect(-w / 2, 0, w, 1);
+            ctx.rotate(Math.PI + a)
+            ctx.fillRect(-w / 2, 0, w, 1);
+            ctx.rotate(-2 * a)
+            ctx.fillRect(-w / 2, 0, w, 1);
+        }
+
+        function triplet(ctx) {
+            const r = .18;
+            circle(.5, .28, r)
+            circle(.25, .7, r)
+            circle(.75, .7, r)
+
+            function circle(x, y, r) {
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+        function bordure(ctx) {
+            ctx.lineWidth = .2
+            ctx.strokeStyle = ctx.fillStyle;
+            ctx.stroke();
+        }
+
+        function stripesvertical(ctx) {
+            let n = 4;
+            let w = 1 / n;
+            for (let i = 0; i < n; ++i) {
+                ctx.fillRect(i * w, 0, w / 2, 2);
+            }
+        }
+        function stripeshorizonal(ctx) {
+            let n = 5;
+            let h = 1.1 / n;
+            for (let i = 0; i < n; ++i) {
+                ctx.fillRect(0, i * h, 1, h / 2);
+            }
+        }
+        function stripesdiagonal(ctx) {
+            ctx.translate(.5, -.5)
+            ctx.rotate(Math.PI / 4)
+            let n = 4;
+            let w = 1 / n;
+            for (let i = 0; i < 2 * n; ++i) {
+                ctx.fillRect(i * w, 0, w / 2, 2);
+            }
+        }
+
+        function gyronny6(ctx) {
+            ctx.translate(.5, .5);
+
+            for (let i = 0; i < 3; ++i) {
+                ctx.beginPath();
+
+                ctx.moveTo(0, 0);
+                ctx.lineTo(1, 0);
+
+                ctx.rotate(2 * Math.PI / 6)
+                ctx.lineTo(1, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.rotate(2 * Math.PI / 6)
+            }
+        }
+
+        function gyronny8(ctx) {
+            ctx.translate(.5, .5);
+
+            if (Math.random() < .5) ctx.rotate(Math.PI / 8)
+
+            for (let i = 0; i < 4; ++i) {
+                ctx.beginPath();
+
+                ctx.moveTo(0, 0);
+                ctx.lineTo(1, 0);
+
+                ctx.rotate(2 * Math.PI / 8)
+                ctx.lineTo(1, 0);
+                ctx.closePath();
+                ctx.fill();
+                ctx.rotate(2 * Math.PI / 8)
+            }
         }
 
         function pick(n, values) {
