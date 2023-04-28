@@ -71,9 +71,9 @@
 
         let gmin;
         let gmax;
-        let gsamples = 500;
+        let gsamples = 1000;
 
-        let path = makePoints(24, w, h);
+        let path = makePoints(100, w, h);
 
         let doRender = true;
         let skipped = 0;
@@ -196,28 +196,66 @@
             }
 
             function cross(a, b) {
-                let n = (3 * Math.random()) | 0;
+
                 let t;
+                switch (rnd(5)) {
+                    case 0: t = [...a]; break;
+                    case 1: t = [...b]; break;
+                    default:
+                        let len = (a.length / 4 + 2 * Math.random() * a.length / 4) | 0;
+                        t = a.slice(0, len);
 
-                if (n == 0) { t = [...a] }
-                else if (n == 1) { t = [...b] }
-                else {
-                    let len = (a.length / 4 + 2 * Math.random() * a.length / 4) | 0;
-                    t = a.slice(0, len);
+                        for (let c of b) {
+                            if (!t.includes(c)) t.push(c);
+                        }
+                        break;
 
-                    for (let c of b) {
-                        if (!t.includes(c)) t.push(c);
-                    }
                 }
 
                 if (Math.random() < mutationRate) {
-                    if (Math.random() < .3)
-                        rotate(t);
-                    else
-                        swapSome(t);
+
+                    switch (rnd(4)) {
+                        case 0: rotate(t);
+                            break;
+                        case 1: swapStrands(t);
+                            break;
+                        case 2: swapSome(t);
+                            break;
+                        default:
+                            moveOne(t);
+                            break;
+                    }
                 }
 
                 return t;
+            }
+
+            function swapStrands(path) {
+                // 2..5
+                let strandLen = 2 + rnd(4);
+
+                let a = rnd(path.length - strandLen);
+                let b = a + rnd(path.length - a - strandLen);
+
+                for (let i = 0; i < strandLen; ++i) {
+                    [path[a + i], path[b + i]] = [path[b + i], path[a + i]]
+                }
+            }
+
+            function moveOne(path) {
+                let i0 = rnd(path.length);
+                let i1 = i0;
+
+                while (i1 == i0) i1 = rnd(path.length);
+
+                const di = Math.sign(i1 - i0);
+                const v = path[i0];
+
+                for (let i = i0; i != i1; i += di) {
+                    path[i] = path[i + di];
+                }
+
+                path[i1] = v;
             }
 
             function rotate(path) {
@@ -263,7 +301,7 @@
             }
         }
 
-        loop(30, update, render);
+        loop(60, update, render);
 
         function update() {
             ++iterNo;
@@ -326,6 +364,7 @@
 
             ctx.clearRect(0, 0, w, h);
 
+            // graph
             for (let { color, graph } of state) {
                 ctx.strokeStyle = color;
                 ctx.beginPath();
@@ -342,14 +381,17 @@
                 ctx.stroke();
             }
 
+            // map
             let i = 0;
-            for (let { title, order, color, score, current, total } of state) {
+            for (let { order, color } of state) {
                 ctx.save();
                 ctx.strokeStyle = color;
                 ctx.fillStyle = color;
 
-                let w = (2 + 3* (state.length - i - 1)) * 1
+                let w = (2 + 3 * (state.length - i - 1)) * 1
                 let r = (2 + 1 * (state.length - i - 1)) * 2
+
+                ctx.globalAlpha = (20 + 80 * i / (state.length - 1)) / 100;
 
                 renderPoints(order, w);
                 renderDots(r);
@@ -358,7 +400,7 @@
                 ++i;
             }
 
-
+            // scoreboard
             let columns = [0, 0];
             let line = 24;
             ctx.font = 'bold 16pt Helvetica'
@@ -376,6 +418,8 @@
 
             i = 0;
             for (let [score, title, color, current] of scoreboard) {
+                const offset = line * i++;
+
                 ctx.save();
                 ctx.strokeStyle = color;
                 ctx.fillStyle = color;
@@ -384,12 +428,11 @@
                 ctx.shadowBlur = 1
                 ctx.shadowOffsetY = line / 20
 
-                ctx.fillText(title, 2 * line, 2 * line + i * line);
-                ctx.fillText('#' + current.toLocaleString('en-US'), 3 * line + columns[0], 2 * line + i * line);
-                ctx.fillText(Math.sqrt(score).toFixed(0), 4 * line + columns[0] + columns[1], 2 * line + i * line);
+                ctx.fillText(title, 2 * line, 2 * line + offset);
+                ctx.fillText('#' + current.toLocaleString('en-US'), 3 * line + columns[0], 2 * line + offset);
+                ctx.fillText(Math.sqrt(score).toFixed(0), 4 * line + columns[0] + columns[1], 2 * line + offset);
 
                 ctx.restore();
-                ++i
             }
         }
 
@@ -430,8 +473,6 @@
             cols = Math.ceil(cols);
 
             let cells = [];
-
-            console.log(n, a, w, h, rows, cols)
 
             for (let i = 0; i < rows; ++i) {
                 for (let j = 0; j < cols; ++j) {
