@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Slide</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        // canvas w/ hex
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let doRender = false;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    doRender ||= fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                if (doRender)
+                    render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script type="text/javascript">
+        const max = Math.max;
+        const min = Math.min;
+        const sin = Math.sin;
+        const cos = Math.cos;
+        const sign = Math.sign;
+
+        const tau = Math.PI * 2;
+
+
+        class Point {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+        }
+
+        class AABB {
+            constructor(x, y, w, h) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+            }
+
+            contains(point) {
+                return this.x <= point.x
+                    && this.y <= point.y
+                    && this.x + this.w >= point.x
+                    && this.y + this.h >= point.y
+            }
+        }
+
+        class Polygon {
+            constructor(points) {
+                this.points = [...points];
+
+                const { x0, x1, y0, y1 } = this.points.reduce((limits, point) => ({
+                    x0: min(limits.x0, point.x),
+                    x1: max(limits.x1, point.x),
+                    y0: min(limits.y0, point.y),
+                    y1: max(limits.y1, point.y)
+                }),
+                    {
+                        x0: Infinity,
+                        x1: -Infinity,
+                        y0: Infinity,
+                        y1: -Infinity
+                    });
+
+                // bounding box
+                this.bb = new AABB(x0, y0, x1 - x0, y1 - y0)
+            }
+
+            contains(p) {
+                if (!this.bb.contains(p))
+                    return false;
+
+                let p0 = this.points.at(-1);
+                let isInside = false;
+
+                for (let p1 of this.points) {
+                    if ((p0.y > p.y) != (p1.y > p.y) && p.x < (p0.x - p1.x) * (p.y - p1.y) / (p0.y - p1.y) + p1.x)
+                        isInside = !isInside;
+
+                    p0 = p1;
+                }
+
+                return isInside;
+            }
+        }
+
+        const _zero2D = new Point(0,0)
+
+        function closestPointOnLineSegment(a, b, p) {
+            const v = [b.x - a.x, b.y - a.y]
+            const u = [a.x - p.x, a.y - p.y]
+            const vu = v[0] * u[0] + v[1] * u[1]
+            const vv = v[0] ** 2 + v[1] ** 2
+            const t = -vu / vv
+            if (t >= 0 && t <= 1) {
+                return _vectorToSegment2D(t, _zero2D, a, b)
+            }
+            const g0 = _sqDiag2D(_vectorToSegment2D(0, p, a, b));
+            const g1 = _sqDiag2D(_vectorToSegment2D(1, p, a, b));
+
+            return g0 <= g1 ? a : b
+        }
+
+        function _vectorToSegment2D(t, p, a, b) {
+            return new Point(
+                (1 - t) * a.x + t * b.x - p.x,
+                (1 - t) * a.y + t * b.y - p.y
+            )
+        }
+
+        function _sqDiag2D(p) { return p.x * p.x + p.y * p.y }
+
+    </script>
+
+    <script type="text/javascript">
+        const ctx = fullscreenCanvas();
+
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        const polygons = [];
+
+        for (let i = 0; i < 3 + rnd(3); ++i) {
+            const points = [];
+            let len = 5 + rnd(3);
+            let x0 = rnd(w);
+            let y0 = rnd(h);
+
+            for (let j = 0; j < len; ++j) {
+                const a = tau * j / len;
+                let d = 10 * (8 + rnd(4));
+                points.push(new Point(x0 + d * cos(a), y0 + d * sin(a)));
+            }
+
+            polygons.push(new Polygon(points));
+        }
+
+        let cursor = new Point(0, 0);
+        let segment = [new Point(30, 300), new Point(1300, 700)];
+        let selected = null;
+
+        ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX, cursor.y = clientY });
+
+        loop(60, update, render);
+
+        function update(delta) {
+            selected = null;
+            for (let p of polygons)
+                if (p.contains(cursor))
+                    selected = p;
+
+            return true;
+        }
+
+        function render(delta) {
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = 'red'
+            ctx.strokeStyle = 'green';
+
+            for (let p of polygons) {
+                ctx.fillStyle = selected == p ? 'yellow' : 'red';
+                let prev = p.points.at(-1);
+                ctx.beginPath();
+                ctx.moveTo(prev.x, prev.y);
+                for (let point of p.points) {
+                    ctx.lineTo(point.x, point.y);
+                }
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.strokeRect(p.bb.x, p.bb.y, p.bb.w, p.bb.h)
+            }
+
+            line('yellow', ...segment);
+
+
+            line('red', cursor, closestPointOnLineSegment(...segment, cursor));
+        }
+
+        function line(color, a, b) {
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y)
+            ctx.strokeStyle = color
+            ctx.stroke();
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+    </script>
+</body>
+
+</html>
