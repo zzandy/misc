@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Bingo</title>
+    <style type="text/css">
+        * {
+            print-color-adjust: exact;
+        }
+
+        .title {
+            margin: 0 0 .1em 1em;
+            padding: .5em;
+            display: inline-block;
+            background-color: white;
+            border-radius: .3em;
+            line-height: .2em;
+        }
+
+        .card {
+            margin-bottom: 1px;
+            display: inline-block;
+            background: burlywood;
+            padding: .2rem;
+            font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
+        }
+
+        .rows {
+            background: center url('./guilloche.svg');
+            background-size: 150%;
+        }
+
+        .row {
+            display: flex;
+        }
+
+        .cell-content {
+            display: table;
+            margin: 0 auto;
+            transform: translate(-.08em, 0);
+        }
+
+        .slot,
+        .empty-slot {
+            overflow: hidden;
+            background-color: rgba(255, 255, 255, .6);
+            outline: 1px solid burlywood;
+            width: 6rem;
+            height: 6rem;
+            line-height: 6rem;
+            display: inline-block;
+            font-size: 5rem;
+            letter-spacing: -.15em;
+        }
+
+        .♠ {
+            color: black
+        }
+
+        .♥ {
+            color: #e11218
+        }
+
+        .♦ {
+            color: #ab0038;
+        }
+
+        .♣ {
+            color: #002038
+        }
+    </style>
+</head>
+
+<body>
+    <script type="text/javascript">
+        const suits = '♠♥♦♣'.split('');
+        const ranks = '2 3 4 5 6 7 8 9 10 J Q K A'.split(' ');
+        const letters = 'ABCDFGHJKLMNPQRSTUVXYZ'.split('');
+        let numRuns = 0;
+
+        render(makeCards(makeDeck()));
+        render(makeCards(makeDeck()));
+        render(makeCards(makeDeck()));
+
+        function render(cards) {
+
+            console.log(numRuns, letters[numRuns])
+
+            let source = [];
+            let numCards = 0;
+
+            for (let card of cards) {
+                ++numCards;
+                source.push(`<div class="card"><div class="title">${letters[numRuns]} ${numCards}</div>`)
+
+                source.push('<div class="rows">')
+                for (let row of card) {
+
+                    source.push('<div class="row">')
+
+                    for (let slot of row) {
+                        if (slot === 0)
+                            source.push('<div class="empty-slot"></div>')
+                        else
+                            source.push(`<div class="slot ${slot[1]}"><div class="cell-content">${slot[0]}${slot[1]}</div></div>`)
+                    }
+
+                    source.push('</div>')
+                }
+
+                source.push('</div></div>')
+            }
+
+            ++numRuns;
+            document.body.innerHTML += source.join('');
+        }
+
+        function makeDeck() {
+            let deck = [];
+            for (let suit of suits) {
+                for (let rank of ranks) {
+                    deck.push([rank, suit]);
+                }
+            }
+
+            return shuffle(deck);
+        }
+
+        function makeCards(deck) {
+            let columns = [];
+            for (let i = 0; i < 7; ++i)columns.push({ len: 0, cells: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] });
+
+            let counts = [0, 0, 0, 0];
+
+            for (let card of deck) {
+                let index = ranks.indexOf(card[0]) / 2 | 0;
+
+                at = rnd(12);
+
+                if (columns[index].len < 4) {
+                    at = columns[index].len * 3 + rnd(3);
+                }
+                else {
+                    at = rnd(12);
+
+                    let tries = 0;
+                    while (counts[at / 3 | 0] > 12 || columns[index].cells[at] !== 0) {
+                        if (++tries > 100) return makeCards(deck);
+                        at = rnd(12);
+                    }
+                }
+
+                ++counts[at / 3 | 0];
+
+                columns[index].cells[at] = card;
+                columns[index].len++;
+            }
+
+            let cards = [];
+
+            for (let i = 0; i < 4; ++i) {
+
+                let rows = [];
+                for (let j = 0; j < 3; ++j) {
+                    let row = [];
+                    for (let column of columns) row.push(column.cells[i * 3 + j])
+                    rows.push(row)
+                }
+                cards.push(rows)
+
+            }
+
+            return cards;
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+    </script>
+</body>
+
+</html>
