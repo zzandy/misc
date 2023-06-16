@@ -84,9 +84,6 @@
         render(makeCards(makeDeck()));
 
         function render(cards) {
-
-            console.log(numRuns, letters[numRuns])
-
             let source = [];
             let numCards = 0;
 
@@ -133,6 +130,9 @@
 
             let counts = [0, 0, 0, 0];
 
+
+            let rowcounts = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
             for (let card of deck) {
                 let index = ranks.indexOf(card[0]) / 2 | 0;
 
@@ -145,13 +145,14 @@
                     at = rnd(12);
 
                     let tries = 0;
-                    while (counts[at / 3 | 0] > 12 || columns[index].cells[at] !== 0) {
+                    while (rowcounts[at] > 4 || counts[at / 3 | 0] > 12 || columns[index].cells[at] !== 0) {
                         if (++tries > 100) return makeCards(deck);
                         at = rnd(12);
                     }
                 }
 
                 ++counts[at / 3 | 0];
+                ++rowcounts[at];
 
                 columns[index].cells[at] = card;
                 columns[index].len++;
@@ -168,7 +169,6 @@
                     rows.push(row)
                 }
                 cards.push(rows)
-
             }
 
             return cards;
