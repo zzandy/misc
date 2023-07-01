@@ -119,28 +119,32 @@
         const ctx = fullscreenCanvas();
         const scale = Math.min(ctx.canvas.width, ctx.canvas.height);
 
-        const order = 5;
+        let order = 6;
         const path = [];
         let n = 0;
         getpath(path, order, 0, 0, scale, id);
-        //const rl = new RenderLoop(render);
-        //rl.start();
+        const rl = new RenderLoop(render);
+        rl.start();
 
-        render();
+        //render();
 
         function render() {
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-            
-            
+            ctx.lineWidth = 8;
+            ctx.lineCap = "round"
+
             for (let i = 1; i < path.length; ++i) {
                 ctx.beginPath();
-                ctx.moveTo(path[i-1][0], path[i-1][1]);
+                ctx.moveTo(path[i - 1][0], path[i - 1][1]);
                 ctx.lineTo(path[i][0], path[i][1]);
-                ctx.strokeStyle = 'hsl(' + ((i*360/path.length-n) % 360) + ', 100%, 60%)';
+                ctx.strokeStyle = 'hsl(' + ((50 * i * 360 / path.length - n) % 360) + ', 100%, 60%)';
+
+                //ctx.strokeStyle = Math.abs(n - i) < 5 ? 'white' : 'grey';
+
                 ctx.stroke();
-                
+
             }
-            n+=5;
+            n += 5;
         }
 
         function getpos(index) {
