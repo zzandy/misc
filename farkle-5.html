@@ -105,28 +105,14 @@
             <div class="wild">B</div>
             <div class="wild">B</div>
         </div>
-        <div>400</div>
-        <div>
-            <div class="wild">A</div>
-            <div class="wild">A</div>
-            <div class="wild">A</div>
-        </div>
         <div>500</div>
+
         <div>
             <div class="wild">A</div>
             <div class="wild">A</div>
             <div class="wild">A</div>
-            <div class="wild">B</div>
-            <div class="wild">B</div>
         </div>
-        <div>1500</div>
-        <div>
-            <div class="wild">A</div>
-            <div class="wild">A</div>
-            <div class="wild">A</div>
-            <div class="wild">A</div>
-        </div>
-        <div>2500</div>
+        <div>700</div>
 
         <div><svg width="var(--size)" height="var(--size)">
                 <use href="#one" />
@@ -139,7 +125,8 @@
             </svg> <svg width="var(--size)" height="var(--size)">
                 <use href="#five" />
             </svg> </div>
-        <div>2700</div>
+        <div>1500</div>
+
         <div><svg width="var(--size)" height="var(--size)">
                 <use href="#two" />
             </svg> <svg width="var(--size)" height="var(--size)">
@@ -151,7 +138,25 @@
             </svg> <svg width="var(--size)" height="var(--size)">
                 <use href="#six" />
             </svg> </div>
+        <div>1500</div>
+
+        <div>
+            <div class="wild">A</div>
+            <div class="wild">A</div>
+            <div class="wild">A</div>
+            <div class="wild">B</div>
+            <div class="wild">B</div>
+        </div>
+        <div>2000</div>
+
+        <div>
+            <div class="wild">A</div>
+            <div class="wild">A</div>
+            <div class="wild">A</div>
+            <div class="wild">A</div>
+        </div>
         <div>3000</div>
+
         <div>
             <div class="wild">A</div>
             <div class="wild">A</div>
@@ -163,11 +168,11 @@
     </div>
 
     <script>
-        let stats = { triple: 154328023, "two pairs": 231459236, "full house": 38582884, quad: 19289298, all: 771700, small: 15434447, big: 15432307, bust: 30859119, total: 1000000000 };
+        let stats = { 'three-of-a-kind': 154328023, "two pairs": 231459236, "full house": 38582884, 'four-of-a-kind': 19289298, 'five-of-a-kind': 771700, 'small': 15434447, 'big': 15432307, 'bust': 30859119, total: 1000000000 };
 
         function init() {
             stats = {
-                'triple': 0, 'two pairs': 0, 'full house': 0, 'quad': 0, 'all': 0, 'small': 0, 'big': 0, 'bust': 0, 'total': 0, 'score': 0
+                'three-of-a-kind': 0, 'two pairs': 0, 'full house': 0, 'four-of-a-kind': 0, 'five-of-a-kind': 0, 'straight': 0, 'bust': 0, 'total': 0, 'score': 0
             }
         }
 
@@ -179,17 +184,14 @@
         }
 
         function which(roll) {
-            if (roll.some(t => t == 5)) return 'all';
-            if (roll.some(t => t == 4)) return 'quad';
+            if (roll.some(t => t == 5)) return 'five-of-a-kind';
+            if (roll.some(t => t == 4)) return 'four-of-a-kind';
             if (roll.some(t => t == 3)) {
                 if (roll.some(t => t == 2)) return 'full house';
-                return 'triple';
+                return 'three-of-a-kind';
             }
             if (roll.filter(t => t == 2).length == 2) return 'two pairs';
-            if (roll.every(t => t < 2)) {
-                if (roll.indexOf(0) == 0) return 'small';
-                if (roll.indexOf(0) == roll.length - 1) return 'big';
-            }
+            if (roll.every(t => t < 2) && (roll.indexOf(0) == 0 || roll.indexOf(0) == roll.length - 1)) return 'straight';
             if (roll[0] == 0 && roll[4] == 0) return 'bust';
             return 'score'
         }
@@ -212,16 +214,16 @@
             report();
         }
 
+
+        const q = {
+            'three-of-a-kind': 2.5, 'two pairs': 3, 'full house': 3, 'four-of-a-kind': 4, 'five-of-a-kind': 5, 'straight': 1.5, 'bust': 0, 'total': 0, 'score': 1
+        };
+
         function report() {
             const lines = Object.entries(stats);
             lines.sort(([_, a], [__, b]) => a - b);
 
-            for (let [name, count] of lines) {
-
-                if (name == 'total') continue;
-                console.log(name + ' ' + (100 * count / stats.total) + '%')
-
-            }
+            console.table(lines.map(([name, count]) => [(100 * count / stats.total) + '%', name, 2 * q[name] / 3 * 100 * stats.score / count]))
         }
     </script>
 
