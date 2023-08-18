@@ -195,6 +195,53 @@
 
     </script>
 
+    <script name="uxcontroller" type="text/javascript">
+        function attachEvents(element, screen, push, undo) {
+
+            element.addEventListener('mousedown', down);
+            element.addEventListener('mouseup', up);
+            element.addEventListener('mousemove', move);
+            element.addEventListener('contextmenu', e => e.preventDefault());
+            window.addEventListener('keydown', key);
+
+            function down(e) {
+                if (e.button != 0) return;
+                screen.view = new AABB(e.clientX, e.clientY, 0, 0);
+            }
+
+            function move(e) {
+                if (screen.view != null) {
+                    screen.view.w = e.clientX - screen.view.x;
+                    screen.view.h = e.clientY - screen.view.y;
+                }
+            }
+
+            function up(e) {
+                if (e.button == 2) {
+                    undo();
+                    return;
+                }
+
+                if (e.button != 0) return;
+
+                if (screen.view == null || Math.abs(screen.view.w) < 3 || Math.abs(screen.view.h) < 3) {
+                    screen.view = null;
+                    return;
+                }
+
+                push(screen.view);
+            }
+
+            function key(e) {
+                if (e.key == 'Escape') {
+                    undo();
+                }
+            }
+
+        }
+
+    </script>
+
     <script type="text/javascript">
         const ctx = fullscreenCanvas();
 
@@ -214,79 +261,125 @@
 
         let tilequeue = [];
         let updateRequired = true;
+
+        let resetTime = performance.now();
+        let doneTime = 0;
+
         resetRendering();
 
-        ctx.canvas.addEventListener('mousedown', down);
-        ctx.canvas.addEventListener('mouseup', up);
-        ctx.canvas.addEventListener('mousemove', move);
-        ctx.canvas.addEventListener('contextmenu', e => e.preventDefault());
-        window.addEventListener('keydown', key)
+        let undoQueue = [];
+        let screen = { view: null };
+
+        attachEvents(ctx.canvas, screen, push, undo);
 
         let vw = 5;
 
         let view = new AABB(-vw / 2 - .5, -vw / ar / 2, vw, vw / ar);
-        let protoview = null;
-        let undoQueue = [];
+
+        let workers = [];
+        let freeWorkers = [];
+        const MAX_WORKERS = 60;
+
+        for (let i = 0; i < MAX_WORKERS; ++i) {
+            workers.push(createWorker(worker, handlerWorkerResult, mandlebrot, screenToViewPure));
+            freeWorkers.push(i);
+        }
 
         loop(60, update, render);
+
+        function worker({ data: { workerId, tile, view, w, h, maxiterations } }) {
+            let q = Math.pow(2, tile.scale);
+            const q2 = q / 2;
+            const q3 = q / 3;
+
+            let ox = tile.bb.x;
+            let oy = tile.bb.y;
+
+            let nhsamples = Math.ceil(tile.bb.w / q) | 0;
+            let nvsamples = Math.ceil(tile.bb.h / q) | 0;
+
+            let buf = new Int16Array(nvsamples * nhsamples);
+
+            let n = 0;
+            let black = 0;
+
+            for (let vsample = 0; vsample < nvsamples; ++vsample) {
+                for (let hsample = 0; hsample < nhsamples; ++hsample) {
+                    let x = ox + hsample * q;
+                    let y = oy + vsample * q;
+
+                    let v = (mandlebrot(...screenToViewPure(x + q2 + q3, y + q2 + q3, view, w, h), maxiterations)
+                        + mandlebrot(...screenToViewPure(x + q2 + q3, y + q2 - q3, view, w, h), maxiterations)
+                        + mandlebrot(...screenToViewPure(x + q2 - q3, y + q2 + q3, view, w, h), maxiterations)
+                        + mandlebrot(...screenToViewPure(x + q2 - q3, y + q2 - q3, view, w, h), maxiterations)) / 4;
+
+                    ++n;
+                    if (v == maxiterations) ++black;
+
+                    buf[vsample * nhsamples + hsample] = v / maxiterations * 65535;
+                }
+            }
+
+            postMessage({ workerId, tile, buf, black: black == n });
+        }
+
+        function handlerWorkerResult({ data: { workerId, tile, buf, black } }) {
+            freeWorkers.push(workerId);
+            updateRequired = true;
+
+            let q = Math.pow(2, tile.scale);
+
+            let ox = tile.bb.x;
+            let oy = tile.bb.y;
+            let nhsamples = Math.ceil(tile.bb.w / q) | 0;
+            let nvsamples = Math.ceil(tile.bb.h / q) | 0;
+            for (let vsample = 0; vsample < nvsamples; ++vsample) {
+                for (let hsample = 0; hsample < nhsamples; ++hsample) {
+                    const x = ox + hsample * q;
+                    const y = oy + vsample * q;
+
+                    let color = buf[vsample * nhsamples + hsample] == 65535 ? [0, 0, 0] : getRainbowRGB(colorOffset + Math.pow(buf[vsample * nhsamples + hsample] / 65535, .5));
+
+                    for (let sx = 0; sx < q; ++sx) {
+                        for (let sy = 0; sy < q; ++sy) {
+                            let idx = ((y + sy) * w + x + sx) * 4
+
+                            img.data[idx + 0] = color[0];
+                            img.data[idx + 1] = color[1];
+                            img.data[idx + 2] = color[2];
+                            img.data[idx + 3] = 255;
+                        }
+                    }
+                }
+            }
+
+            if (tile.scale > 0 && !black) {
+                distribute(tile.bb, tile.scale - 1, (maxScale / tile.scale) * 50 + tile.priority);
+            }
+        }
 
         function update() {
             if (!updateRequired) return;
 
             let then = performance.now();
             let tilesRendered = 0;
-            while (tilequeue.length > 0) {
+            while (tilequeue.length > 0 && freeWorkers.length > 0) {
                 updateRequired = false;
                 let tile = tilequeue.shift();
+                let workerId = freeWorkers.pop();
 
-                let q = Math.pow(2, tile.scale);
-                const q2 = q / 2;
-                const q3 = q / 3;
-
-                let n = 0;
-                let black = 0;
-
-                let ox = tile.bb.x;
-                let oy = tile.bb.y;
-                let mx = ox + tile.bb.w;
-                let my = oy + tile.bb.h;
-                for (let y = oy; y < my; y += q) {
-                    for (let x = ox; x < mx; x += q) {
-                        let v =// mandlebrot(...screenToView(x + q2, y + q2))
-                            (mandlebrot(...screenToView(x + q2 + q3, y + q2 + q3))
-                                + mandlebrot(...screenToView(x + q2 + q3, y + q2 - q3))
-                                + mandlebrot(...screenToView(x + q2 - q3, y + q2 + q3))
-                                + mandlebrot(...screenToView(x + q2 - q3, y + q2 - q3))) / 4;
-
-                        let color = v == maxiterations ? [0, 0, 0] : getRainbowRGB(colorOffset + Math.pow(v / maxiterations, .5));
-
-                        ++n;
-                        black += +(v == maxiterations);
-
-                        for (let sx = 0; sx < q; ++sx) {
-                            for (let sy = 0; sy < q; ++sy) {
-                                let idx = ((y + sy) * w + x + sx) * 4
-
-                                img.data[idx + 0] = color[0] | 0
-                                img.data[idx + 1] = color[1] | 0
-                                img.data[idx + 2] = color[2] | 0
-                                img.data[idx + 3] = 255;
-                            }
-                        }
-                    }
-                }
-
-                if (tile.scale > 0) {
-                    let debuff = black / n;
-                    debuff = (Math.pow(debuff - .65, 2) + debuff / 2 - .25) * 0.3725 * 200
-
-                    distribute(tile.bb, tile.scale - 1, (maxScale / tile.scale) * 50 + tile.priority + debuff);
-                }
+                workers[workerId].postMessage({ workerId, tile, view, w, h, maxiterations });
 
                 if (performance.now() - then > 15) {
                     tilequeue.sort(byPriority)
                     break;
                 }
+            }
+
+            if (tilequeue.length == 0 && freeWorkers.length == MAX_WORKERS && doneTime == 0) doneTime = performance.now();
+
+            function byPriority(a, b) {
+                return a.priority - b.priority
             }
         }
 
@@ -294,7 +387,7 @@
             let w3 = (bb.w / 3) | 0;
             let h3 = (bb.h / 3) | 0;
 
-            if (w3 < 50 || h3 < 50) {
+            if (w3 < 20 || h3 < 20) {
                 tilequeue.push(new Tile(bb, scale, priority));
                 return;
             }
@@ -320,20 +413,17 @@
             tilequeue.push(new Tile(new AABB(tx0, ty2, w3, g3), scale, priority));
         }
 
-        function byPriority(a, b) {
-            return a.priority - b.priority
-        }
-
         function render() {
             ctx.putImageData(img, 0, 0);
 
-            if (protoview != null) {
+            if (screen.view != null) {
                 ctx.strokeStyle = 'silver';
-                ctx.strokeRect(protoview.x + .5, protoview.y + .5, protoview.w, protoview.h);
+                ctx.strokeRect(screen.view.x + .5, screen.view.y + .5, screen.view.w, screen.view.h);
             }
 
-            text(2, scaleFormatted());
-            text(1, tilequeue.reduce((s, t) => t.scale + s + 1, 0));
+            text(3, scaleFormatted());
+            text(2, MAX_WORKERS - freeWorkers.length);
+            text(1, doneTime == 0 ? (performance.now() - resetTime) : (doneTime - resetTime));
 
             if (tilequeue.length > 0) updateRequired = true;
 
@@ -351,7 +441,7 @@
             return view.w < 0.01 ? view.w.toExponential(1) : view.w.toFixed(2)
         }
 
-        function mandlebrot(x, y) {
+        function mandlebrot(x, y, maxiterations) {
             let a = x;
             let b = y;
             let n = 0;
@@ -370,42 +460,10 @@
             return maxiterations;
         }
 
-        function screenToView(x, y) {
-            return [
-                view.x + x * view.w / w,
-                view.y + y * view.h / h
-            ]
-        }
+        function fromScreen(view) {
 
-        function down(e) {
-            if (e.button != 0) return;
-            protoview = new AABB(e.clientX, e.clientY, 0, 0);
-        }
-
-        function move(e) {
-            if (protoview != null) {
-                protoview.w = e.clientX - protoview.x;
-                protoview.h = e.clientY - protoview.y;
-            }
-        }
-
-        function up(e) {
-            if (e.button == 2) {
-                undo();
-                return;
-            }
-
-            if (e.button != 0) return;
-
-            if (protoview == null || Math.abs(protoview.w) < 3 || Math.abs(protoview.h) < 3) {
-                protoview = null;
-                return;
-            }
-
-            undoQueue.push(view);
-
-            let [ax, ay] = screenToView(protoview.x, protoview.y);
-            let [bx, by] = screenToView(protoview.x + protoview.w, protoview.y + protoview.h);
+            let [ax, ay] = screenToView(view.x, view.y);
+            let [bx, by] = screenToView(view.x + view.w, view.y + view.h);
 
             let cx = (ax + bx) / 2
             let cy = (ay + by) / 2;
@@ -417,21 +475,37 @@
             if (ar > a) w = Math.abs(h) * ar * Math.sign(w);
             else h = Math.abs(w) / ar * Math.sign(h);
 
-            view = new AABB(cx - w / 2, cy - h / 2, w, h);
-            protoview = null;
+            return new AABB(cx - w / 2, cy - h / 2, w, h);
+        }
+
+        function screenToViewPure(x, y, view, w, h) {
+            return [
+                view.x + x * view.w / w,
+                view.y + y * view.h / h
+            ]
+        }
+
+        function screenToView(x, y) {
+            return [
+                view.x + x * view.w / w,
+                view.y + y * view.h / h
+            ]
+        }
+
+        function push() {
+            undoQueue.push(view);
+
+            view = fromScreen(screen.view)
+            screen.view = null;
 
             resetRendering();
         }
 
         function resetRendering() {
+            resetTime = performance.now();
+            doneTime = 0;
             tilequeue.length = 0;
             distribute(new AABB(0, 0, w, h), maxScale, 0)
-        }
-
-        function key(e) {
-            if (e.key == 'Escape') {
-                undo();
-            }
         }
 
         function undo() {
@@ -439,10 +513,6 @@
                 view = undoQueue.pop();
                 resetRendering();
             }
-        }
-
-        function getPositiveAngleDiff(a, b) {
-            return a < b ? a + 360 - b : a - b
         }
 
         function getRainbowRGB(num) {
@@ -476,13 +546,25 @@
 
             let d = dx * dx + dy * dy;
 
-
             this.priority = priority + 20 * d / d2;
         }
 
+        function createWorker(func, onUpdate, ...dependencies) {
+            let worker = constructWorker(func, ...dependencies);
+
+            worker.addEventListener('message', onUpdate);
+
+            return worker;
+        }
+
+        function constructWorker(...functions) {
+            var blob = new Blob(['self.onmessage = ', functions.map(fn => fn.toString()).join(';')], { type: 'text/javascript' });
+            var url = URL.createObjectURL(blob);
+
+            return new Worker(url);
+        }
+
     </script>
-
-
 </body>
 
 </html>
