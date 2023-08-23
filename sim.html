@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Sim</title>
+    <script src="lightue.min.js"></script>
+    <style>
+        .group>button {
+            border-radius: 0;
+            border: outset silver;
+            border-width: 1px 0 1px 1px;
+            margin: 1px 0;
+        }
+
+        .group>button:first-child {
+            border-start-start-radius: .2em;
+            border-end-start-radius: .2em;
+        }
+
+        .group>button:last-child {
+            border-start-end-radius: .2em;
+            border-end-end-radius: .2em;
+            border-width: 1px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="graph" width="300" height="130">
+
+    </canvas>
+
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script type="text/javascript">
+        (() => {
+            const { useState, button, div } = Lightue;
+
+            let production = 0;
+            let income = 0;
+            let samplesUpdated = false;
+            const samples = [[], []];
+            const numSamples = 300;
+
+            const can = document.getElementById('graph');
+            const ctx = can.getContext('2d');
+
+            const state = useState({
+                inventory: 0,
+                balance: 0,
+                price: 1,
+                numAgents: 1,
+                agentRate: 1,
+                manualRate: 1,
+                features: [],
+                interestLevel: 0,
+            });
+
+            function sell(n) {
+                if (state.inventory >= n) {
+                    state.inventory -= n;
+
+                    let sale = n * state.price
+                    state.balance += sale;
+
+                    income += sale;
+                }
+            }
+
+            loop(60, delta => {
+                const produced = delta * state.numAgents * state.agentRate / 1000;
+                state.inventory += produced
+                production += produced
+                samplesUpdated = true;
+            }, () => { });
+
+            loop(2, () => {
+                if (samplesUpdated) {
+                    if (samples[0].push(production) >= numSamples)
+                        samples[0].shift();
+
+                    if (samples[1].push(income) >= numSamples)
+                        samples[1].shift();
+
+                    production = 0;
+                    income = 0;
+                    samplesUpdated = false;
+                }
+            }, () => {
+                const { width, height } = can;
+                const colors = ['black', 'red'];
+                const line = {};
+                const bars = {};
+                const styles = [line, bars];
+
+                ctx.clearRect(0, 0, width, height);
+
+                for (let l = 0; l < samples.length; ++l) {
+                    ctx.strokeStyle = colors[l % colors.length];
+                    const style = styles[l % styles.length];
+
+                    let min = Infinity;
+                    let max = -Infinity;
+
+                    for (const sample of samples[l]) {
+                        min = Math.min(min, sample);
+                        max = Math.max(max, sample);
+                    }
+
+                    max = Math.max(10, max);
+
+                    ctx.beginPath();
+                    for (let i = 0; i < numSamples; ++i) {
+
+                        if (samples[l][i] === undefined) break;
+
+                        const x = i * width / numSamples;
+                        const y = height - (samples[l][i]) / max * height;
+
+                        if (style == bars) {
+                            ctx.strokeRect(x, y, 0, height)
+                        }
+                        else {
+                            if (i == 0) ctx.moveTo(x, y)
+                            else ctx.lineTo(x, y);
+                        }
+                    }
+
+                    ctx.stroke();
+                }
+            });
+
+            loop(1 / 10, () => {
+                state.balance += state.balance * state.interestLevel * .01;
+                income += state.balance * state.interestLevel * .01
+            }, () => { });
+
+
+            function nextInterest() {
+                return (state.interestLevel + 1) * .01;
+            }
+
+            Lightue({
+                balance: () => 'Balance: ' + nice(state.balance),
+                inventory: () => 'In stock: ' + (state.inventory | 0),
+                numAgents: () => 'Automakers: ' + state.numAgents + ' (' + nice(state.numAgents * state.agentRate) + ' per second)',
+
+                make: btn(() => `Make ${nice(state.manualRate)}`, () => {
+                    state.inventory += state.manualRate;
+                    production += state.manualRate;
+                }),
+
+                sell: div.group([
+                    btn("Sell one", () => sell(1), () => state.inventory >= 1),
+                    btn("Sell ten", () => sell(10), () => state.inventory >= 10, () => has('Sell 10s')),
+                    btn("Sell hundred", () => sell(100), () => state.inventory >= 100, () => has('Sell 100s')),
+                    btn("Sell thousand", () => sell(1000), () => state.inventory >= 1000, () => has('Sell 1000s')),
+                    btn("Sell 10K", () => sell(10000), () => state.inventory >= 10000, () => has('Sell 10K')),
+                    btn("Sell 100K", () => sell(100000), () => state.inventory >= 100000, () => has('Sell 100K')),
+                    btn("Sell a million", () => sell(1000000), () => state.inventory >= 1000000, () => has('Sell 1M')),
+                ]),
+
+                man: upgrade('Manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
+                aut: div.group({
+                    $$: upgrade('Auto rate', () => round(state.agentRate * 100 * 1.2), () => state.agentRate *= 1.1),
+                    $$1: upgrade('Add agent', () => state.numAgents * 200, () => ++state.numAgents)
+                }),
+
+
+                selss: div.group([
+                    feat('Sell 10s', 20),
+                    feat('Sell 100s', 250),
+                    feat('Sell 1000s', 3000, () => has('Sell 10s')),
+                    feat('Sell 10K', 40000, () => has('Sell 100s')),
+                    feat('Sell 100K', 500000, () => has('Sell 1000s')),
+                    feat('Sell 1M', 7000000, () => has('Sell 10K'))
+                ]),
+
+                int: upgrade('+1% Interest', () => round(1000 * Math.pow(state.interestLevel + 1, 1.2)), () => ++state.interestLevel)
+            });
+
+            function has(feature) {
+                return state.features.includes(feature);
+            }
+
+            function feat(title, price, offerIf) {
+                return btn(title + ' (' + price + ')', () => {
+                    state.features.push(title);
+                }, () => state.balance >= price, () => !has(title) && (!offerIf || offerIf()))
+            }
+
+            function upgrade(title, getNextPrice, onBuy) {
+                return btn(() => `${title} (${getNextPrice()})`,
+                    () => {
+                        state.balance -= getNextPrice();
+                        onBuy();
+                    },
+                    () => getNextPrice() <= state.balance);
+            }
+
+            function btn(title, onclick, activeIf, showIf) {
+                return button({
+                    $$: title,
+                    $if: () => !showIf || showIf(),
+                    onclick,
+                    _disabled: () => !!activeIf && !activeIf()
+                })
+            }
+
+            function round(price) {
+                return ((price / 10) | 0) * 10;
+            }
+
+            function nice(value) {
+                return value == (value | 0)
+                    ? value
+                    : value.toFixed(2);
+            }
+        })();
+    </script>
+</body>
+
+</html>
