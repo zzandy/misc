@@ -203,26 +203,51 @@
             element.addEventListener('mousemove', move);
             element.addEventListener('contextmenu', e => e.preventDefault());
             window.addEventListener('keydown', key);
+            window.addEventListener('keyup', keyup);
+
+
+            const origin = [0, 0];
+            const cursor = [0, 0];
+            let centered = false;
+            let inprogress = false;
+
+            function assingView() {
+                const dx = cursor[0] - origin[0];
+                const dy = cursor[1] - origin[1];
+
+                screen.view = centered
+                    ? new AABB(origin[0] - dx, origin[1] - dy, dx * 2, dy * 2)
+                    : new AABB(origin[0], origin[1], dx, dy);
+            }
+
 
             function down(e) {
                 if (e.button != 0) return;
-                screen.view = new AABB(e.clientX, e.clientY, 0, 0);
+                inprogress = true;
+                origin[0] = e.clientX;
+                origin[1] = e.clientY;
             }
 
             function move(e) {
-                if (screen.view != null) {
-                    screen.view.w = e.clientX - screen.view.x;
-                    screen.view.h = e.clientY - screen.view.y;
-                }
+                if (!inprogress || e.button != 0) return;
+                cursor[0] = e.clientX;
+                cursor[1] = e.clientY;
+                assingView();
             }
 
             function up(e) {
                 if (e.button == 2) {
-                    undo();
+                    if (inprogress) {
+                        inprogress = false;
+                        screen.view = null;
+                    }
+                    else { undo(); }
                     return;
                 }
 
                 if (e.button != 0) return;
+
+                inprogress = false;
 
                 if (screen.view == null || Math.abs(screen.view.w) < 3 || Math.abs(screen.view.h) < 3) {
                     screen.view = null;
@@ -234,7 +259,24 @@
 
             function key(e) {
                 if (e.key == 'Escape') {
-                    undo();
+                    if (inprogress) {
+                        inprogress = false;
+                        screen.view = null;
+                    }
+                    else
+                        undo();
+                }
+                else if (inprogress && e.key == 'Shift') {
+                    centered = true;
+                    assingView();
+                }
+            }
+
+            function keyup(e) {
+                if (e.key == 'Shift') {
+                    centered = false;
+                    if (inprogress)
+                        assingView();
                 }
             }
 
@@ -438,7 +480,8 @@
         }
 
         function scaleFormatted() {
-            return view.w < 0.01 ? view.w.toExponential(1) : view.w.toFixed(2)
+            const s = Math.round(5 / view.w);
+            return s + 'x';
         }
 
         function mandlebrot(x, y, maxiterations) {
