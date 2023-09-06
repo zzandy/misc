@@ -71,11 +71,12 @@
             //   - fading notifications - for autosell, achievements etc.
 
             const { useState, button, div } = Lightue;
+            const pow = Math.pow;
 
             let production = 0;
             let income = 0;
             let samplesUpdated = false;
-            const samples = [[], []]; // income, production
+            const samples = [[], []]; // production, income
             const numSamples = 300;
 
             const can = document.getElementById('graph');
@@ -86,7 +87,7 @@
                 balance: 0,
                 price: 1,
                 numAgents: 1,
-                agentRate: 1,
+                agentLevel: 1,
                 manualRate: 1,
                 features: [],
                 interestLevel: 0,
@@ -95,11 +96,11 @@
                 autosellRateAgg: 0,
             });
 
-// todo move automaker to upgradeable technology, fix autorate formula, steeper price curves
-
-            const interest = upgradable(() => state.interestLevel, () => state.interestLevel++, (level) => level * 0.2, (level) => round(1000 * Math.pow(level, 1.3)), (value, next) => `Interest ${value}% -> ${next}%`);
-            const autosell = upgradable(() => state.autosellLevel, () => state.autosellLevel++, level => Math.pow(10, level), level => 10 * Math.pow(10, level) / 5, (value, next) => `Autosell ${value} -> ${next}`);
-            const autosellRate = upgradable(() => state.autosellRate, () => state.autosellRate++, level => 20 - level, level => 1000 * level * level - 600 * level + 800, (value, next) => `every ${value} -> ${next} seconds`);
+            const autoCount = upgradable(dt => state.numAgents += dt, t => t, l => 200 * pow(l - 1, 1.1), () => 'Add agent');
+            const autoRate = upgradable(dt => state.agentLevel += dt, t => 1 + (t - 1) * 1.1, l => l * 120, () => 'Upgrade autoprodution rate');
+            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `Interest ${value}% -> ${next}%`);
+            const autosell = upgradable(dt => state.autosellLevel += dt, t => pow(10, t), t => 10 * pow(10, t) / 5, (value, next) => `Autosell ${value} -> ${next}`);
+            const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => 1000 * t * t - 600 * t + 800, (value, next) => `every ${value} -> ${next} seconds`);
 
             function sell(n) {
                 if (state.inventory >= n) {
@@ -113,7 +114,7 @@
             }
 
             loop(60, delta => {
-                const produced = delta * state.numAgents * state.agentRate / 1000;
+                const produced = delta * state.numAgents * autoRate.getValue() / 1000;
                 state.inventory += produced
                 production += produced
                 samplesUpdated = true;
@@ -194,7 +195,7 @@
             Lightue({
                 balance: () => 'Balance: ' + nice(state.balance),
                 inventory: () => 'In stock: ' + (state.inventory | 0),
-                numAgents: () => 'Automakers: ' + state.numAgents + ' (' + nice(state.numAgents * state.agentRate) + ' per second)',
+                numAgents: () => 'Automakers: ' + state.numAgents + ' (' + nice(state.numAgents * autoRate.getValue()) + ' per second)',
                 intr: {
                     $$: () => interest.getValue() + '%',
                     $if: () => state.interestLevel > 0
@@ -218,8 +219,8 @@
 
                 man: upgrade('Manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
                 aut: div.group([
-                    upgrade('Auto rate', () => round(state.agentRate * 100 * 1.2), () => state.agentRate *= 1.1),
-                    upgrade('Add agent', () => round(Math.pow(state.numAgents, 1.1) * 200), () => ++state.numAgents)
+                    upgradeObj(autoCount),
+                    upgradeObj(autoRate),
                 ]),
 
                 selss: div.group([
@@ -243,21 +244,25 @@
                 return upgrade(obj.getLabel, obj.getUpgradePrice, obj.upgrade);
             }
 
-            function upgradable(getLevel, upgrade, levelToValue, levelToPrice, labelFn) {
+            function upgradable(getSetTier, tierToValue, tierToPrice, labelFn) {
                 function getValue() {
-                    return levelToValue(getLevel());
+                    return tierToValue(getSetTier(0));
                 }
 
                 function getNextValue() {
-                    return levelToValue(getLevel() + 1);
+                    return tierToValue(getSetTier(0) + 1);
                 }
 
                 function getUpgradePrice() {
-                    return levelToPrice(getLevel() + 1);
+                    return round(tierToPrice(getSetTier(0) + 1));
                 }
 
                 function getLabel() {
                     return labelFn(getValue(), getNextValue())
+                }
+
+                function upgrade() {
+                    getSetTier(1);
                 }
 
                 return {
