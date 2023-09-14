@@ -23,6 +23,26 @@
             border-end-end-radius: .2em;
             border-width: 1px;
         }
+
+        .notes>* {
+            animation: fade 2s;
+        }
+
+        @keyframes fade {
+            0% {
+                display: block;
+                opacity: 100%;
+            }
+
+            60% {
+                opacity: 100%;
+            }
+
+            100% {
+                opacity: 0;
+                display: none;
+            }
+        }
     </style>
 </head>
 
@@ -70,14 +90,18 @@
             //   - achievements 
             //   - fading notifications - for autosell, achievements etc.
 
-            const { useState, button, div } = Lightue;
+            const { useState, button, div, span } = Lightue;
             const pow = Math.pow;
 
             let production = 0;
             let income = 0;
             let samplesUpdated = false;
             const samples = [[], []]; // production, income
+            let manualProdSpot = 0;
+            const manualProdSamples = []; for (let i = 0; i < 60; ++i)manualProdSamples.push(0);
+            let manualProdCursor = 0
             const numSamples = 300;
+            let record = 0;
 
             const can = document.getElementById('graph');
             const ctx = can.getContext('2d');
@@ -94,13 +118,18 @@
                 autosellLevel: 0,
                 autosellRate: 0,
                 autosellRateAgg: 0,
+                notes: []
             });
 
             const autoCount = upgradable(dt => state.numAgents += dt, t => t, l => 200 * pow(l - 1, 1.1), () => 'Add agent');
-            const autoRate = upgradable(dt => state.agentLevel += dt, t => 1 + (t - 1) * 1.1, l => l * 120, () => 'Upgrade autoprodution rate');
-            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `Interest ${value}% -> ${next}%`);
+            const autoRate = upgradable(dt => state.agentLevel += dt, t => pow(1.1, t - 1), l => l * 120, () => 'Upgrade autoprodution rate');
+            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `Interest ${nice(value)}% -> ${nice(next)}%`);
             const autosell = upgradable(dt => state.autosellLevel += dt, t => pow(10, t), t => 10 * pow(10, t) / 5, (value, next) => `Autosell ${value} -> ${next}`);
             const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => 1000 * t * t - 600 * t + 800, (value, next) => `every ${value} -> ${next} seconds`);
+
+            const noteAutosell = note();
+            const noteInterest = note();
+            const noteRecord = note();
 
             function sell(n) {
                 if (state.inventory >= n) {
@@ -110,7 +139,11 @@
                     state.balance += sale;
 
                     income += sale;
+
+                    return true;
                 }
+
+                return false;
             }
 
             loop(60, delta => {
@@ -119,10 +152,23 @@
                 production += produced
                 samplesUpdated = true;
 
+                manualProdSamples[(manualProdCursor++) % 60] = manualProdSpot;
+                state.manualProd = manualProdSamples.reduce((a, b) => a + b);
+
+                if (state.manualProd > 10 && state.manualProd > record) {
+                    record = state.manualProd;
+                    noteRecord('New production record!!');
+                }
+
+                manualProdSpot = 0;
+
                 if (state.autosellLevel > 0) {
                     if ((state.autosellRateAgg += delta / 1000) > autosellRate.getValue()) {
                         state.autosellRateAgg -= autosellRate.getValue();
-                        sell(autosell.getValue());
+                        const sellAmount = autosell.getValue();
+                        if (sell(sellAmount)) {
+                            noteAutosell.show('Autosold ' + sellAmount + ' items');
+                        }
                     }
                 }
             }, () => { });
@@ -190,22 +236,35 @@
 
                 state.balance += int;
                 income += int;
+
+                if (int > 0) {
+                    noteInterest.show('Interest ' + (int > 5 ? Math.round(int) : int.toFixed(3)));
+                }
             }, () => { });
+
+            let t = 0;
 
             Lightue({
                 balance: () => 'Balance: ' + nice(state.balance),
                 inventory: () => 'In stock: ' + (state.inventory | 0),
-                numAgents: () => 'Automakers: ' + state.numAgents + ' (' + nice(state.numAgents * autoRate.getValue()) + ' per second)',
+                numAgents: () => 'Automakers: ' + state.numAgents + '@' + nice(autoRate.getValue()) + ' (' + nice(state.numAgents * autoRate.getValue()) + ' per second)',
                 intr: {
-                    $$: () => interest.getValue() + '%',
+                    $$: () => 'Interest: ' + nice(interest.getValue()) + '%',
                     $if: () => state.interestLevel > 0
                 },
 
-                make: btn(() => `Make ${nice(state.manualRate)
-                    }`, () => {
+                make: [
+                    btn(() => `Make ${nice(state.manualRate)}`, () => {
+                        manualProdSpot += state.manualRate;
                         state.inventory += state.manualRate;
                         production += state.manualRate;
                     }),
+                    span({
+                        _style: 'padding-left: .5em',
+                        $if: () => state.manualProd > 0,
+                        $$: () => state.manualProd + ' per second'
+                    })
+                ],
 
                 sell: div.group([
                     btn("Sell one", () => sell(1), () => state.inventory >= 1, () => !has('Sell 1000s')),
@@ -237,7 +296,9 @@
                 autosell: div.group([
                     upgradeObj(autosell),
                     upgradeObj(autosellRate),
-                ])
+                ]),
+
+                notes: state.notes
             });
 
             function upgradeObj(obj) {
@@ -272,6 +333,36 @@
                     getUpgradePrice,
                     getLabel
                 }
+            }
+
+            function note() {
+
+                let current = null;
+                let timer = null;
+
+                function show(note) {
+
+                    note = { note }
+
+                    if (current) {
+                        const id = state.notes.indexOf(current);
+                        state.notes.splice(id, 1, note);
+
+                        current = state.notes[id];
+                        clearTimeout(timer);
+                    }
+                    else {
+                        const id = state.notes.push(note);
+                        current = state.notes[id - 1];
+                    }
+
+                    timer = setTimeout(() => {
+                        const id = state.notes.indexOf(current);
+                        state.notes.splice(id, 1);
+                        current = null;
+                    }, 2000);
+                }
+                return { show }
             }
 
             function has(feature) {
