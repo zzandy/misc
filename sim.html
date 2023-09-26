@@ -6,6 +6,19 @@
     <title>Sim</title>
     <script src="lightue.min.js"></script>
     <style>
+        html,
+        body {
+            line-height: 1.5rem;
+        }
+
+        .line>div {
+            display: inline-block;
+        }
+
+        .line *:not(:first-child) {
+            margin: 0 .2rem;
+        }
+
         .group>button {
             border-radius: 0;
             border: outset silver;
@@ -84,24 +97,27 @@
         (() => {
 
             // todo/ideas
-            //   - storage
             //   - lifetime stats
             //   - live stats display
             //   - achievements 
-            //   - fading notifications - for autosell, achievements etc.
 
             const { useState, button, div, span } = Lightue;
             const pow = Math.pow;
 
             let production = 0;
             let income = 0;
+            let cleanupRate = 0;
             let samplesUpdated = false;
-            const samples = [[], []]; // production, income
+            const samples = [[], [], [], []]; // production, income, cleanup, waste
             let manualProdSpot = 0;
-            const manualProdSamples = []; for (let i = 0; i < 60; ++i)manualProdSamples.push(0);
+            const manualProdSamples = []; for (let i = 0; i < 60; ++i) manualProdSamples.push(0);
             let manualProdCursor = 0
             const numSamples = 300;
             let record = 0;
+
+            let cleanupSpot = 0;
+            let cleanupCursor = 0;
+            const cleanupSamples = []; for (let i = 0; i < 60; ++i) cleanupSamples.push(0);
 
             const can = document.getElementById('graph');
             const ctx = can.getContext('2d');
@@ -110,7 +126,7 @@
                 inventory: 0,
                 balance: 0,
                 price: 1,
-                numAgents: 1,
+                numAgents: 0,
                 agentLevel: 1,
                 manualRate: 1,
                 features: [],
@@ -118,14 +134,24 @@
                 autosellLevel: 0,
                 autosellRate: 0,
                 autosellRateAgg: 0,
-                notes: []
+                notes: [],
+
+                storage: 1000,
+                storageLevel: 1,
+                waste: 0,
+                cleanup: 0
             });
 
-            const autoCount = upgradable(dt => state.numAgents += dt, t => t, l => 200 * pow(l - 1, 1.1), () => 'Add agent');
-            const autoRate = upgradable(dt => state.agentLevel += dt, t => pow(1.1, t - 1), l => l * 120, () => 'Upgrade autoprodution rate');
-            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `Interest ${nice(value)}% -> ${nice(next)}%`);
-            const autosell = upgradable(dt => state.autosellLevel += dt, t => pow(10, t), t => 10 * pow(10, t) / 5, (value, next) => `Autosell ${value} -> ${next}`);
-            const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => 1000 * t * t - 600 * t + 800, (value, next) => `every ${value} -> ${next} seconds`);
+            function storageChange(n) {
+                return 1000 * Math.pow(10, (n / 9) | 0);
+            }
+
+            const autoCount = upgradable(dt => state.numAgents += dt, t => t, t => 10 * pow(t, 1.3), () => 'Add agent');
+            const autoRate = upgradable(dt => state.agentLevel += dt, t => 1 + (t - 1) * .05, t => 120 * pow(1.1, t), () => 'Upgrade autoprodution rate');
+            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `${nice(next)}%`);
+            const autosell = upgradable(dt => state.autosellLevel += dt, t => !!t * pow(10, t), t => !!t * 10 * pow(10, t) / 5, (value, next) => `${next}`);
+            const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => t < 20 ? 1000 * pow(t, 1.4) : 1e20, (value, next) => `${next} seconds`);
+            const storage = upgradable(dt => { if (dt > 0) state.storage += storageChange(state.storageLevel); return state.storageLevel += dt }, storageChange, t => storageChange(t - 1), (value, next) => `Add ${value} to storage capacity`);
 
             const noteAutosell = note();
             const noteInterest = note();
@@ -146,20 +172,38 @@
                 return false;
             }
 
+            function produce(n) {
+                let spare = state.storage - state.inventory;
+                let cleanup = spare > 0 ? Math.min(state.waste / 2, n / 3) : 0;
+                let produced = Math.min(n - cleanup, spare);
+                let wasted = n - cleanup - produced;
+
+                production += produced;
+                cleanupRate += cleanup;
+                cleanupSpot += cleanup;
+
+                state.waste += wasted - cleanup;
+                state.inventory += produced;
+            }
+
             loop(60, delta => {
                 const produced = delta * state.numAgents * autoRate.getValue() / 1000;
-                state.inventory += produced
-                production += produced
+
+                produce(produced);
+
                 samplesUpdated = true;
 
+                cleanupSamples[(cleanupCursor++) % 60] = cleanupSpot;
                 manualProdSamples[(manualProdCursor++) % 60] = manualProdSpot;
                 state.manualProd = manualProdSamples.reduce((a, b) => a + b);
+                state.cleanup = cleanupSamples.reduce((a, b) => a + b);
 
                 if (state.manualProd > 10 && state.manualProd > record) {
                     record = state.manualProd;
-                    noteRecord('New production record!!');
+                    noteRecord.show('New production record!!');
                 }
 
+                cleanupSpot = 0;
                 manualProdSpot = 0;
 
                 if (state.autosellLevel > 0) {
@@ -176,38 +220,43 @@
             // stats loop
             loop(2, () => {
                 if (samplesUpdated) {
-                    if (samples[0].push(production) >= numSamples)
-                        samples[0].shift();
-
-                    if (samples[1].push(income) >= numSamples)
-                        samples[1].shift();
+                    const newSamples = [production, income, cleanupRate, state.waste];
+                    for (let i = 0; i < samples.length; ++i)
+                        if (samples[i].push(newSamples[i]) >= numSamples)
+                            samples[i].shift();
 
                     production = 0;
                     income = 0;
+                    cleanupRate = 0;
                     samplesUpdated = false;
                 }
             }, () => {
                 const { width, height } = can;
-                const colors = ['black', 'red'];
+                const colors = ['black', 'red', 'magenta', 'purple'];
                 const line = {};
                 const bars = {};
-                const styles = [line, bars];
+                const styles = [line, bars, line, line];
+
+                const prodScale = { min: Infinity, max: -Infinity }
+                const scales = [prodScale, { min: Infinity, max: -Infinity }, prodScale, { min: Infinity, max: -Infinity }];
+
+
+                for (let l = 0; l < samples.length; ++l) {
+                    const scale = scales[l];
+                    for (const sample of samples[l]) {
+                        scale.min = Math.min(scale.min, sample);
+                        scale.max = Math.max(scale.max, sample);
+                    }
+
+                    if (scale.max < 10) scale.max = 10;
+                }
 
                 ctx.clearRect(0, 0, width, height);
 
                 for (let l = 0; l < samples.length; ++l) {
                     ctx.strokeStyle = colors[l % colors.length];
                     const style = styles[l % styles.length];
-
-                    let min = Infinity;
-                    let max = -Infinity;
-
-                    for (const sample of samples[l]) {
-                        min = Math.min(min, sample);
-                        max = Math.max(max, sample);
-                    }
-
-                    max = Math.max(10, max);
+                    const { min, max } = scales[l % scales.length]
 
                     ctx.beginPath();
                     for (let i = 0; i < numSamples; ++i) {
@@ -246,7 +295,11 @@
 
             Lightue({
                 balance: () => 'Balance: ' + nice(state.balance),
-                inventory: () => 'In stock: ' + (state.inventory | 0),
+                inventory: () => 'In stock: ' + (state.inventory | 0) + ' / ' + state.storage,
+                wast: {
+                    $$: () => `Waste: ${state.waste | 0}${nice(state.cleanup) ? `; ${nice(state.cleanup)} production goes towards cleanup` : ''}`,
+                    $if: () => state.waste > 0
+                },
                 numAgents: () => 'Automakers: ' + state.numAgents + '@' + nice(autoRate.getValue()) + ' (' + nice(state.numAgents * autoRate.getValue()) + ' per second)',
                 intr: {
                     $$: () => 'Interest: ' + nice(interest.getValue()) + '%',
@@ -254,11 +307,11 @@
                 },
 
                 make: [
-                    btn(() => `Make ${nice(state.manualRate)}`, () => {
-                        manualProdSpot += state.manualRate;
-                        state.inventory += state.manualRate;
-                        production += state.manualRate;
-                    }),
+                    btn(() => `Make ${nice(state.manualRate)
+                        }`, () => {
+                            manualProdSpot += state.manualRate;
+                            produce(state.manualRate);
+                        }),
                     span({
                         _style: 'padding-left: .5em',
                         $if: () => state.manualProd > 0,
@@ -276,7 +329,8 @@
                     btn("Sell a million", () => sell(1000000), () => state.inventory >= 1000000, () => has('Sell 1M')),
                 ]),
 
-                man: upgrade('Manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
+                man: upgrade('Increase manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
+                str: upgradeObj(storage),
                 aut: div.group([
                     upgradeObj(autoCount),
                     upgradeObj(autoRate),
@@ -291,10 +345,12 @@
                     feat('Sell 1M', 7000000, () => has('Sell 10K'))
                 ]),
 
-                int: upgradeObj(interest),
+                int: div.line([() => `Interest ${nice(interest.getValue())}% `, upgradeObj(interest)]),
 
-                autosell: div.group([
+                autosell: div.line([
+                    () => `Autosell ${autosell.getValue()} `,
                     upgradeObj(autosell),
+                    () => `every ${autosellRate.getValue()} seconds`,
                     upgradeObj(autosellRate),
                 ]),
 
