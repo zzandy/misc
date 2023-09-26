@@ -95,36 +95,42 @@
 
     <script type="text/javascript">
         (() => {
-
             // todo/ideas
-            //   - lifetime stats
+            //   - lifetime stats - earnings, autosales, expenses, interest, clicks, manual/auto production, waste
             //   - live stats display
             //   - achievements 
 
             const { useState, button, div, span } = Lightue;
             const pow = Math.pow;
 
-            let production = 0;
-            let income = 0;
-            let cleanupRate = 0;
-            let samplesUpdated = false;
-            const samples = [[], [], [], []]; // production, income, cleanup, waste
-            let manualProdSpot = 0;
-            const manualProdSamples = []; for (let i = 0; i < 60; ++i) manualProdSamples.push(0);
-            let manualProdCursor = 0
-            const numSamples = 300;
             let record = 0;
 
-            let cleanupSpot = 0;
-            let cleanupCursor = 0;
-            const cleanupSamples = []; for (let i = 0; i < 60; ++i) cleanupSamples.push(0);
+            const _graphs = [];
+
+            const prodScale = graphScale();
+            const incomeScale = graphScale();
+            const graphs = {
+                util: graph('silver', 'widebars'),
+                waste: graph('purple', 'line'),
+                prod: graph('black', 'line', prodScale),
+                clean: graph('magenta', 'line', prodScale),
+                inc: graph('red', 'bars', incomeScale),
+                sell: graph('navy', 'event'),
+                int: graph('green', 'bars', incomeScale),
+            };
 
             const can = document.getElementById('graph');
             const ctx = can.getContext('2d');
 
+            const stats = {
+                manualProd: stat(),
+                cleanup: stat(),
+                clicks: stat()
+            }
+
             const state = useState({
                 inventory: 0,
-                balance: 0,
+                balance:10000,
                 price: 1,
                 numAgents: 0,
                 agentLevel: 1,
@@ -135,27 +141,87 @@
                 autosellRate: 0,
                 autosellRateAgg: 0,
                 notes: [],
-
                 storage: 1000,
                 storageLevel: 1,
                 waste: 0,
-                cleanup: 0
+                cleanup: 0,
+
+                clicksPerSec:0,
+                totalClicks: 0
             });
+
+            function graph(color, style, scale) {
+                const N = 150;
+
+                const obj =
+                {
+                    spot: 0,
+                }
+
+                const g = {
+                    samples: Array(N).fill(0), color, style, scale: scale || graphScale(),
+                    commit: () => {
+                        if (g.samples.push(obj.spot) > N) g.samples.shift();
+                        obj.spot = 0;
+
+                        g.scale.reset();
+                    }
+                }
+
+                _graphs.push(g);
+
+                return obj;
+            }
+
+            function graphScale() {
+                return { min: 0, max: -Infinity, reset: function () { this.max = -Infinity; this.min = 0; } };
+            }
+
+            function stat() {
+                const N = 60;
+                let cursor = 0;
+                const samples = Array(N).fill(0);
+
+                const obj = {
+                    spot: 0,
+                    tally
+                }
+
+                function tally() {
+                    samples[(cursor++) % N] = obj.spot;
+                    obj.spot = 0;
+                    return samples.reduce((a, b) => a + b);
+                }
+
+                return obj;
+            }
 
             function storageChange(n) {
                 return 1000 * Math.pow(10, (n / 9) | 0);
+            }
+
+            function autosellRatePrice(x) {
+                const x2 = x * x;
+                const x3 = x2 * x;
+                const x4 = x2 * x2;
+                return 1000 * (0.00490358 * x4 - 0.0751675 * x3 + 0.372488 * x2 - 0.143111 * x + 0.12843)
             }
 
             const autoCount = upgradable(dt => state.numAgents += dt, t => t, t => 10 * pow(t, 1.3), () => 'Add agent');
             const autoRate = upgradable(dt => state.agentLevel += dt, t => 1 + (t - 1) * .05, t => 120 * pow(1.1, t), () => 'Upgrade autoprodution rate');
             const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `${nice(next)}%`);
             const autosell = upgradable(dt => state.autosellLevel += dt, t => !!t * pow(10, t), t => !!t * 10 * pow(10, t) / 5, (value, next) => `${next}`);
-            const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => t < 20 ? 1000 * pow(t, 1.4) : 1e20, (value, next) => `${next} seconds`);
+            const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => t < 20 ? autosellRatePrice(t + 1) : 1e20, (value, next) => `${next} seconds`);
             const storage = upgradable(dt => { if (dt > 0) state.storage += storageChange(state.storageLevel); return state.storageLevel += dt }, storageChange, t => storageChange(t - 1), (value, next) => `Add ${value} to storage capacity`);
 
             const noteAutosell = note();
             const noteInterest = note();
             const noteRecord = note();
+
+            function click() {
+                stats.clicks.spot++;
+                state.totalClicks++;
+            }
 
             function sell(n) {
                 if (state.inventory >= n) {
@@ -164,7 +230,7 @@
                     let sale = n * state.price
                     state.balance += sale;
 
-                    income += sale;
+                    graphs.inc.spot += sale;
 
                     return true;
                 }
@@ -178,9 +244,10 @@
                 let produced = Math.min(n - cleanup, spare);
                 let wasted = n - cleanup - produced;
 
-                production += produced;
-                cleanupRate += cleanup;
-                cleanupSpot += cleanup;
+                graphs.prod.spot += produced;
+                graphs.clean.spot += cleanup;
+
+                stats.cleanup.spot += cleanup;
 
                 state.waste += wasted - cleanup;
                 state.inventory += produced;
@@ -191,27 +258,25 @@
 
                 produce(produced);
 
-                samplesUpdated = true;
-
-                cleanupSamples[(cleanupCursor++) % 60] = cleanupSpot;
-                manualProdSamples[(manualProdCursor++) % 60] = manualProdSpot;
-                state.manualProd = manualProdSamples.reduce((a, b) => a + b);
-                state.cleanup = cleanupSamples.reduce((a, b) => a + b);
+                state.manualProd = stats.manualProd.tally();
+                state.cleanup = stats.cleanup.tally();
+                state.clicksPerSec = stats.clicks.tally();
 
                 if (state.manualProd > 10 && state.manualProd > record) {
                     record = state.manualProd;
                     noteRecord.show('New production record!!');
                 }
 
-                cleanupSpot = 0;
-                manualProdSpot = 0;
-
                 if (state.autosellLevel > 0) {
                     if ((state.autosellRateAgg += delta / 1000) > autosellRate.getValue()) {
                         state.autosellRateAgg -= autosellRate.getValue();
                         const sellAmount = autosell.getValue();
                         if (sell(sellAmount)) {
+                            graphs.sell.spot = 1
                             noteAutosell.show('Autosold ' + sellAmount + ' items');
+                        }
+                        else {
+                            graphs.sell.spot = -1;
                         }
                     }
                 }
@@ -219,59 +284,55 @@
 
             // stats loop
             loop(2, () => {
-                if (samplesUpdated) {
-                    const newSamples = [production, income, cleanupRate, state.waste];
-                    for (let i = 0; i < samples.length; ++i)
-                        if (samples[i].push(newSamples[i]) >= numSamples)
-                            samples[i].shift();
+                graphs.waste.spot = state.waste;
+                graphs.util.spot = 10 * state.inventory / state.storage;
 
-                    production = 0;
-                    income = 0;
-                    cleanupRate = 0;
-                    samplesUpdated = false;
+                for (const graph of _graphs) {
+                    graph.commit();
                 }
             }, () => {
                 const { width, height } = can;
-                const colors = ['black', 'red', 'magenta', 'purple'];
-                const line = {};
-                const bars = {};
-                const styles = [line, bars, line, line];
 
-                const prodScale = { min: Infinity, max: -Infinity }
-                const scales = [prodScale, { min: Infinity, max: -Infinity }, prodScale, { min: Infinity, max: -Infinity }];
-
-
-                for (let l = 0; l < samples.length; ++l) {
-                    const scale = scales[l];
-                    for (const sample of samples[l]) {
+                for (const graph of _graphs) {
+                    const scale = graph.scale;
+                    for (const sample of graph.samples) {
                         scale.min = Math.min(scale.min, sample);
                         scale.max = Math.max(scale.max, sample);
                     }
-
                     if (scale.max < 10) scale.max = 10;
                 }
 
                 ctx.clearRect(0, 0, width, height);
 
-                for (let l = 0; l < samples.length; ++l) {
-                    ctx.strokeStyle = colors[l % colors.length];
-                    const style = styles[l % styles.length];
-                    const { min, max } = scales[l % scales.length]
+                for (const graph of _graphs) {
+                    ctx.strokeStyle = ctx.fillStyle = graph.color;
+                    const style = graph.style;
+                    const { min, max } = graph.scale;
 
                     ctx.beginPath();
-                    for (let i = 0; i < numSamples; ++i) {
 
-                        if (samples[l][i] === undefined) break;
+                    for (let i = 0; i < graph.samples.length; ++i) {
 
-                        const x = i * width / numSamples;
-                        const y = height - (samples[l][i]) / max * height;
+                        if (graph.samples[i] === undefined) break;
 
-                        if (style == bars) {
-                            ctx.strokeRect(x, y, 0, height)
+                        const x = (i * width / graph.samples.length) | 0;
+                        const y = (height - (graph.samples[i]) / max * height) | 0;
+
+                        if (style == 'bars') {
+                            ctx.fillRect(x, y, 1, height)
+                        }
+                        else if (style == 'widebars') {
+                            ctx.fillRect(x, y, width / graph.samples.length, height)
+                        }
+                        else if (style == 'event') {
+                            if (graph.samples[i] == 0) continue;
+                            ctx.strokeRect(x - 3.5, height - 10.5, 6, 6);
+                            if (graph.samples[i] > 0)
+                                ctx.fillRect(x - 2, height - 9, 3, 3);
                         }
                         else {
-                            if (i == 0) ctx.moveTo(x, y)
-                            else ctx.lineTo(x, y);
+                            if (i == 0) ctx.moveTo(x-.5, y-.5)
+                            else ctx.lineTo(x-.5, y-.5);
                         }
                     }
 
@@ -281,10 +342,10 @@
 
             // interest loop
             loop(1 / 10, () => {
-                const int = interest.getValue() / 100 * state.balance
+                const int = interest.getValue() / 100 * state.balance;
 
                 state.balance += int;
-                income += int;
+                graphs.int.spot += int;
 
                 if (int > 0) {
                     noteInterest.show('Interest ' + (int > 5 ? Math.round(int) : int.toFixed(3)));
@@ -309,13 +370,13 @@
                 make: [
                     btn(() => `Make ${nice(state.manualRate)
                         }`, () => {
-                            manualProdSpot += state.manualRate;
+                            stats.manualProd.spot += state.manualRate;
                             produce(state.manualRate);
                         }),
                     span({
                         _style: 'padding-left: .5em',
                         $if: () => state.manualProd > 0,
-                        $$: () => state.manualProd + ' per second'
+                        $$: () => nice(state.manualProd) + ' per second'
                     })
                 ],
 
@@ -444,7 +505,7 @@
                 return button({
                     $$: title,
                     $if: () => !showIf || showIf(),
-                    onclick,
+                    onclick: () => { click(); onclick() },
                     _disabled: () => !!activeIf && !activeIf()
                 })
             }
