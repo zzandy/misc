@@ -7,6 +7,13 @@
     <title>D12</title>
 
     <style type="text/css">
+        html,
+        body {
+            background-color: #003c0e;
+            color: white;
+            font-size: 16pt;
+        }
+
         .container {
             position: fixed;
             float: left;
@@ -18,13 +25,11 @@
         }
 
         .container .tri {
-            font-size: 70%;
-            color: darkgreen;
+            color: black;
         }
 
         .container .quad {
-            font-size: 70%;
-            color: darkred;
+            color: red;
         }
     </style>
 </head>
@@ -40,22 +45,21 @@
         //  5           6
         //     9    11
         //  7    10     8
-        // 
 
         let triangles = '0-1-2 1-3-4 3-5-9 4-11-6 2-6-8 0-5-7 9-10-11 7-8-10'.split(' ').map(t => t.split('-').map(i => +i));
         let quads = '0-2-8-7 0-1-3-5 1-2-6-4 6-8-10-11 5-9-10-7 3-4-11-9'.split(' ').map(t => t.split('-').map(i => +i));
 
         let debug;
 
-        //let next = flipIterIter(getPermInter(6));
-        let next = (() => {
-            let a = goodValues();
-            let i = -1;
-            return () => {
-                if (++i >= a.length) return undefined;
-                return a[i];
-            }
-        })();
+        let next = flipIterIter(getPermInter(6));
+        // let next = (() => {
+        //     let a = goodValues();
+        //     let i = -1;
+        //     return () => {
+        //         if (++i >= a.length) return undefined;
+        //         return a[i];
+        //     }
+        // })();
 
         let bestScore = Infinity;
 
@@ -89,7 +93,6 @@
                 if (score < 10) {
                     if (figures[0] == 1 && figures[1] == 12 || figures[1] == 13) console.log('x', debug)
 
-                    console.log(score, figures.slice(0, 6))
                     render(figures, score, makeUI())
                 }
             }
@@ -100,11 +103,11 @@
         function getFaceValue(initials, n) {
             return (n < 6
                 ? initials[n]
-                : 13 - initials[11 - n]);
+                : 13 - initials[11 - n])-1;
         }
 
         function expand(initials) {
-            let expanded = initials.map(i => i);
+            let expanded = [...initials];
 
             for (let tr of triangles) {
                 expanded.push(
