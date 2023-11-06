@@ -100,12 +100,86 @@
         <div>50</div>
 
         <div>
+            <svg width="var(--size)" height="var(--size)">
+                <use href="#one" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#two" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#three" />
+            </svg>
+            &nbsp;
+            &nbsp;
+            &nbsp;
+            <svg width="var(--size)" height="var(--size)">
+                <use href="#two" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#three" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#four" />
+            </svg>
+        </div>
+        <div>300</div>
+        <div>
+            <svg width="var(--size)" height="var(--size)">
+                <use href="#three" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#four" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#five" />
+            </svg>
+            &nbsp;
+            &nbsp;
+            &nbsp;
+            <svg width="var(--size)" height="var(--size)">
+                <use href="#four" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#five" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#six" />
+            </svg>
+        </div>
+        <div>300</div>
+
+        <div>
             <div class="wild">A</div>
             <div class="wild">A</div>
             <div class="wild">B</div>
             <div class="wild">B</div>
         </div>
         <div>500</div>
+
+        <div><svg width="var(--size)" height="var(--size)">
+                <use href="#one" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#two" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#three" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#four" />
+            </svg> </div>
+        <div>600</div>
+
+        <div> <svg width="var(--size)" height="var(--size)">
+                <use href="#two" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#three" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#four" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#five" />
+            </svg> </div>
+        <div>600</div>
+
+        <div> <svg width="var(--size)" height="var(--size)">
+                <use href="#three" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#four" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#five" />
+            </svg> <svg width="var(--size)" height="var(--size)">
+                <use href="#six" />
+            </svg> </div>
+        <div>600</div>
 
         <div>
             <div class="wild">A</div>
@@ -172,7 +246,7 @@
 
         function init() {
             stats = {
-                'three-of-a-kind': 0, 'two pairs': 0, 'full house': 0, 'four-of-a-kind': 0, 'five-of-a-kind': 0, 'straight': 0, 'bust': 0, 'total': 0, 'score': 0
+                'middle-straight': 0, 'short-straight': 0, 'three-of-a-kind': 0, 'two pairs': 0, 'full house': 0, 'four-of-a-kind': 0, 'five-of-a-kind': 0, 'straight': 0, 'bust': 0, 'total': 0, 'score': 0
             }
         }
 
@@ -191,7 +265,15 @@
                 return 'three-of-a-kind';
             }
             if (roll.filter(t => t == 2).length == 2) return 'two pairs';
-            if (roll.every(t => t < 2) && (roll.indexOf(0) == 0 || roll.indexOf(0) == roll.length - 1)) return 'straight';
+
+            const { max } = roll.reduce(({ current, max }, num) => num ? { current: current + 1, max } : { current: 0, max: Math.max(current, max) }, { current: 0, max: 0 });
+
+            switch (max) {
+                case 3: return 'short-straight';
+                case 4: return 'middle-straight';
+                case 5: return 'straight';
+            }
+
             if (roll[0] == 0 && roll[4] == 0) return 'bust';
             return 'score'
         }
@@ -216,7 +298,7 @@
 
 
         const q = {
-            'three-of-a-kind': 2.5, 'two pairs': 3, 'full house': 3, 'four-of-a-kind': 4, 'five-of-a-kind': 5, 'straight': 1.5, 'bust': 0, 'total': 0, 'score': 1
+            'middle-straight': 1, 'short-straight': 1, 'three-of-a-kind': 2.5, 'two pairs': 3, 'full house': 3, 'four-of-a-kind': 4, 'five-of-a-kind': 5, 'straight': 1.5, 'bust': 0, 'total': 0, 'score': 1
         };
 
         function report() {

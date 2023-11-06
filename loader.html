@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Loading</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        // canvas w/ hex
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(fps, update, render) {
+
+            let then = performance.now();
+            let fixedDelta = 1000 / fps;
+            let acc = fixedDelta;
+
+            function tick() {
+                let now = performance.now();
+                acc += now - then;
+                then = now;
+
+                let doRender = false;
+                let retry = 20;
+                while (acc >= fixedDelta && retry-- > 0) {
+                    doRender = true;
+                    acc -= fixedDelta;
+                    update(fixedDelta);
+                }
+
+                if (acc > fixedDelta) {
+                    acc = fixedDelta;
+                }
+
+                if (doRender) {
+                    requestAnimationFrame(render)
+                }
+
+                setTimeout(tick, fixedDelta);
+            }
+
+            tick();
+        }
+
+    </script>
+
+    <script name="lib" type="text/javascript">
+        function rnd(n) {
+            return (Math.random() * n) | 0;
+        }
+    </script>
+
+    <script type="text/javascript">
+        const tau = Math.PI;
+        const deg = tau / 360;
+        const rad = 1 / deg;
+        const sq32 = Math.sqrt(3) / 2
+
+        const ctx = fullscreenCanvas();
+
+        const { width, height } = ctx.canvas;
+
+        const w = 95;
+        const h = 95;
+        const s = 10;
+        let map = new Int8Array(w * h);
+        let map2 = new Int8Array(w * h);
+
+        const shape = new Path2D();
+
+        const r = s / 2;
+
+        shape.moveTo(0, -r);
+        shape.lineTo(r * sq32, -r / 2);
+        shape.lineTo(r * sq32, r / 2);
+        shape.lineTo(0, r);
+        shape.lineTo(-r * sq32, r / 2);
+        shape.lineTo(-r * sq32, -r / 2);
+        shape.closePath();
+
+        const colors = '0,#440154,#47186a,#472c7b,#424085,#3a528b,#32628d,#2c728e,#26818e,#20908c,#1e9f88,#28ae7f,#3ebc73,#5ec961,#83d34b,#addc30,#d7e219'.split(',')
+
+        function itoy(i, j) {
+
+            const x = j - w / 2 + i / 2 - h / 4;
+            const y = (i - h / 2) * sq32;
+
+            return [x, y]
+        }
+
+        function itoidx(i, j) {
+            return i * w + j;
+        }
+
+        map[map.length / 2 | 0] = 1;
+        for (let i = 0; i < h; ++i) {
+            for (let j = 0; j < w; ++j) {
+                const idx = i * w + j;
+
+                const [x, y] = itoy(i, j);
+
+                const r2 = x * x + y * y;
+                if (r2 > (h * h / 4 * sq32 * sq32)) {
+                    map[idx] = -1;
+                    map2[idx] = -1;
+                }
+            }
+        }
+
+        function update(delta) {
+            map2 = new Int8Array(map);
+
+            for (let i = 0; i < h; ++i) {
+                for (let j = 0; j < w; ++j) {
+                    const idx = i * w + j;
+
+                    if (map[idx] <= 0) continue;
+                    const pos = [];
+
+                    if (i < h - 1) {
+                        pos.push(itoidx(i + 1, j))
+                        if (j > 0) pos.push(itoidx(i + 1, j - 1))
+                    }
+
+                    if (i > 0) {
+                        pos.push(itoidx(i - 1, j))
+                        if (j < w - 1) pos.push(itoidx(i - 1, j + 1))
+                    }
+
+                    if (j > 0) pos.push(itoidx(i, j - 1))
+                    if (j < w - 1) pos.push(itoidx(i, j + 1))
+
+                    if (rnd(1000) < 20) {
+                        const n = pos[rnd(pos.length)];
+
+                        if (map[n] != -1 && map[idx] > map2[n] && map[n] == map2[n] && map[n] < colors.length - 1) ++map2[n];
+                        if (map[idx] == map2[idx] && map[idx] < colors.length - 1 && rnd(100) < 50 && pos.every(p => map[p] < 0 || map[p] > 0 && map[p] >= map[idx] - 1)) {
+                            ++map2[idx];
+                        }
+                    }
+                }
+            }
+
+            [map, map2] = [map2, map]
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, width, height);
+            for (let i = 0; i < h; ++i) {
+                for (let j = 0; j < w; ++j) {
+                    const idx = itoidx(i, j);
+                    if (map[idx] < 1) continue
+
+                    ctx.save();
+
+                    const [x, y] = itoy(i, j);
+
+                    ctx.translate(width / 2 + x * s, height / 2 + y * s);
+
+                    renderCell(map[idx]);
+
+                    ctx.restore();
+                }
+            }
+        }
+
+        function renderCell(cell) {
+            ctx.fillStyle = colors[cell];
+            ctx.fill(shape);
+        }
+
+        loop(60, update, render);
+    </script>
+</body>
+
+</html>

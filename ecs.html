@@ -8,7 +8,6 @@
 
 <body>
     <script name="canvas" type="text/javascript">
-
         // canvas w/ hex
         function fullscreenCanvas() {
             let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
@@ -35,7 +34,6 @@
     </script>
 
     <script name="loop" type="text/javascript">
-
         function loop(fps, update, render) {
 
             let then = performance.now();
@@ -143,15 +141,15 @@
             entity.renderable(entity);
         }, locatable, renderable);
 
-        for(let i=0;i<100;++i)
-        addEntity(locatable({ x: width / 2, y: height / 2 }), roamable({ angle: rnd(360), velocity: .1 }), renderable(renderBall));
+        for (let i = 0; i < 100; ++i)
+            addEntity(locatable({ x: width / 2, y: height / 2 }), roamable({ angle: rnd(360), velocity: .1 }), renderable(renderBall));
 
         function renderBall({ locatable, roamable }) {
-            ctx.strokeStyle=            ctx.fillStyle = 'silver';
-            ctx.fillRect(locatable.x-5, locatable.y-5, 10, 10);
+            ctx.strokeStyle = ctx.fillStyle = 'silver';
+            ctx.fillRect(locatable.x - 5, locatable.y - 5, 10, 10);
             ctx.beginPath();
             ctx.moveTo(locatable.x, locatable.y);
-            ctx.lineTo(locatable.x + 200*roamable.velocity * Math.cos(roamable.angle * rad), locatable.y +200* roamable.velocity * Math.sin(roamable.angle * rad))
+            ctx.lineTo(locatable.x + 200 * roamable.velocity * Math.cos(roamable.angle * rad), locatable.y + 200 * roamable.velocity * Math.sin(roamable.angle * rad))
             ctx.stroke();
         }
 

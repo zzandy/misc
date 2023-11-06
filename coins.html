@@ -28,11 +28,12 @@
         let reportBest = out();
         let reportCurrent = out();
         let reportProgress = out();
-        let cap = 50;
-        let max = 100;
+        let cap = 20;
+        let max = 35;
         //3876
 
         // good one - 45 27 16 6 4 1
+        // 12 7 3 1
 
         // todo value 5 10 25 50 100 more than other sums
 
@@ -41,12 +42,12 @@
         }
 
         function* gen() {
-            for (let t = cap; t > 5; --t)
-                for (let i = x(t); i > 4; --i)
-                    for (let j = x(i); j > 3; --j)
-                        for (let k = x(j); k > 2; --k)
-                            for (let l = x(k); l > 1; --l)
-                                yield [t, i, j, k, l, 1]
+            // for (let t = cap; t > 5; --t)
+            //     for (let i = x(t); i > 4; --i)
+                     for (let j = cap; j > 3; --j)
+            for (let k = x(j); k > 2; --k)
+                for (let l = x(k); l > 1; --l)
+                    yield [/*t, i,*/ j, k, l, 1]
         }
 
         let seq = gen();
@@ -116,7 +117,9 @@
                     console.log('cant get ' + i + ' using ' + coins.join(', '))
                     return Infinity;
                 }
-                avg += count.length / max;
+                avg += Math.abs(count.length - Math.pow(i, 1 / 3));
+
+                //avg += (1 - i / max) * count.length / max;
             }
 
             return avg;
