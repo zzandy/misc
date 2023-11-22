@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Opolis</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'inline-block';
+
+            document.body.appendChild(can);
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script type="text/javascript">
+        const w = 100;
+        const h = 150;
+        const width = w * 2;
+        const height = h * 2;
+
+        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#fff5eb'];
+
+
+
+
+        let cardlist = [...cards([0, 1, 2, 3, 4])]
+            .filter(card => card.join('').match(/0/))
+            .filter(card => !card.join('').match(/0\d?4$|4\d?0$|^0\d?4|^4\d?0/));
+
+        shuffle(cardlist);
+
+        for (let card of cardlist) {
+            if(rnd(1000)<500)card.reverse();
+            render(card);
+        }
+
+        function render(card) {
+            let [_, ctx] = makeCanvas(width, height, true);
+            const p = w / 20;
+            ctx.beginPath();
+            ctx.moveTo(p * 3, p);
+            ctx.lineTo(width - p * 3, p);
+            ctx.quadraticCurveTo(width - p, p, width - p, p * 3);
+            ctx.lineTo(width - p, height - 3 * p);
+            ctx.quadraticCurveTo(width - p, height - p, width - 3 * p, height - p)
+            ctx.lineTo(3 * p, height - p)
+            ctx.quadraticCurveTo(p, height - p, p, height - 3 * p)
+            ctx.lineTo(p, 3 * p);
+            ctx.quadraticCurveTo(p, p, p * 3, p)
+
+            ctx.closePath();
+            ctx.clip();
+
+            ctx.fillStyle = colors[card[0]];
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = colors[card[1]];
+            ctx.fillRect(w, 0, w, h);
+            ctx.fillStyle = colors[card[2]];
+            ctx.fillRect(0, h, w, h);
+            ctx.fillStyle = colors[card[3]];
+            ctx.fillRect(w, h, w, h);
+
+            //ctx.strokeText(card.join(''), w, h)
+        }
+
+        function* cards(values) {
+            for (let i = 0; i < values.length; ++i) {
+                for (let res of mix(...values.filter((_, j) => i != j))) yield res;
+            }
+        }
+
+        function* mix(a, ...values) {
+            for (let res of perm(values)) {
+                yield [a, ...res];
+                res.splice(1, 0, a);
+                yield res;
+            }
+        }
+
+        function* perm(values) {
+            let p = [];
+            for (let i = 0; i <= values.length; ++i)p.push(i)
+            let i = 1;
+            yield [...values]
+            while (i < values.length) {
+                p[i]--;
+                let j = ((i % 2) == 0) ? 0 : p[i];
+                [values[j], values[i]] = [values[i], values[j]]
+                yield [...values]
+                i = 1
+                while (p[i] == 0) {
+                    p[i] = i
+                    ++i
+                }
+            }
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+    </script>
+</body>
+
+</html>
