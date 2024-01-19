@@ -8,7 +8,6 @@
 
 <body>
     <script name="canvas" type="text/javascript">
-        // canvas w/ hex
         function fullscreenCanvas() {
             let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
 
@@ -85,6 +84,9 @@
         const { width, height } = ctx.canvas;
 
         const systems = [];
+        // system pools
+        const fixed = [];
+        const variable = [];
 
         function addEntity(...components) {
             const entity = Object.fromEntries(components);
@@ -94,6 +96,15 @@
                     system.add(entity);
                 }
             }
+        }
+
+        function addComponent(name) {
+            const gen = (value) => {
+                return [name, value];
+            }
+
+            gen.component = name;
+            return gen;
         }
 
         function addSystem(pool, process, ...components) {
@@ -110,49 +121,13 @@
             pool.push(system)
         }
 
-        function addComponent(name) {
-            const gen = (value) => {
-                return [name, value];
-            }
+        // components
+        const position = addComponent('position');
+        const movement = addComponent('movement');
+        const draw = addComponent('draw');
 
-            gen.component = name;
-            return gen;
-        }
 
-        const locatable = addComponent('locatable');
-        const roamable = addComponent('roamable');
-        const renderable = addComponent('renderable');
-
-        // system pools
-        const fixed = [];
-        const variable = [];
-
-        addSystem(fixed, ({ locatable, roamable }, delta) => {
-
-            const d = roamable.velocity * delta;
-            roamable.angle += (rnd(1000) - 500) / 100000;
-
-            locatable.x += d * Math.cos(roamable.angle * rad);
-            locatable.y += d * Math.sin(roamable.angle * rad);
-
-        }, roamable, locatable);
-
-        addSystem(variable, (entity) => {
-            entity.renderable(entity);
-        }, locatable, renderable);
-
-        for (let i = 0; i < 100; ++i)
-            addEntity(locatable({ x: width / 2, y: height / 2 }), roamable({ angle: rnd(360), velocity: .1 }), renderable(renderBall));
-
-        function renderBall({ locatable, roamable }) {
-            ctx.strokeStyle = ctx.fillStyle = 'silver';
-            ctx.fillRect(locatable.x - 5, locatable.y - 5, 10, 10);
-            ctx.beginPath();
-            ctx.moveTo(locatable.x, locatable.y);
-            ctx.lineTo(locatable.x + 200 * roamable.velocity * Math.cos(roamable.angle * rad), locatable.y + 200 * roamable.velocity * Math.sin(roamable.angle * rad))
-            ctx.stroke();
-        }
-
+        // Loop setup
         function update(delta) {
             for (const system of fixed) {
                 system.run(delta);
@@ -168,6 +143,61 @@
         }
 
         loop(60, update, render);
+
+        // Scene
+        // draw
+        addSystem(variable, (entity) => {
+            //entity.draw(entity);
+        }, position, movement, draw);
+
+        // draw crushed
+        addSystem(variable, (entity) => {
+            const crushed = { position: crush(entity.position), movement: entity.movement, draw: entity.draw }
+            entity.draw(crushed);
+
+            function crush(pos) {
+                const ox = width / 2;
+                const oy = height / 2;
+
+                const dx = pos.x - ox;
+                const dy = pos.y - oy;
+
+                const a = Math.atan2(dy, dx);
+                const d = 10*Math.log(dx * dx + dy * dy);
+
+                return { x: ox + d * Math.cos(a), y: oy + d * Math.sin(a) };
+            }
+        }, position, movement, draw);
+
+        // roam
+        addSystem(fixed, ({ position, movement }, delta) => {
+
+            const d = movement.velocity * delta;
+            movement.angle += (rnd(1000) - 500) / 200000;
+
+            position.x += d * Math.cos(movement.angle * rad);
+            position.y += d * Math.sin(movement.angle * rad);
+
+        }, movement, position);
+
+        for (let i = 0; i < 1000; ++i)
+            addEntity(position({ x: width / 2, y: height / 2 }), movement({ angle: rnd(360), velocity: .05 }), draw(renderBall));
+
+        function renderBall({ position: pos, movement: move }) {
+            ctx.strokeStyle = ctx.fillStyle = 'silver';
+            ctx.save();
+            ctx.translate(pos.x, pos.y);
+            ctx.rotate(move.angle * rad);
+
+            ctx.beginPath();
+            ctx.moveTo(5, 0)
+            ctx.lineTo(-1, 1.5)
+            ctx.lineTo(-1, -1.5)
+            ctx.closePath();
+
+            ctx.fill();
+            ctx.restore();
+        }
     </script>
 </body>
 
