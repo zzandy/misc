@@ -424,7 +424,26 @@
         }
 
         function sandColor(tick, vary) {
-            return hcy2rgb(floating(tick / 120, vary ? 5 : 0), .8, floating(.6, vary ? .03 : 0))
+            let hue = (tick / 120) % 360;
+            let sat = .7;
+            let lig = .6;
+
+            const p1 = 45;
+            const p2 = 180;
+            const p3 = 240;
+            const p4 = 340;
+
+            const w1 = (p2 - p1) / 2;
+            const w2 = (p4 - p3) / 2;
+
+            if (hue > p1 && hue < p2 || hue > p3 && hue < p4) sat *= .5;
+
+            const dg = Math.abs((p2 + p1) / 2 - hue);
+            const dp = Math.abs((p4 + p3) / 2 - hue);
+            if (dg < w1) { sat *= dg / w1; lig += .35 * (1 - dg / w1) }
+            if (dp < w2) { sat *= Math.pow(dp / w2, 2); lig -= .5 * (1 - Math.pow(dp / w2, 2)) }
+
+            return hcy2rgb(floating(hue, vary ? 5 : 0), floating(sat, vary ? sat * .05 : 0), floating(lig, vary ? lig * .05 : 0))
         }
 
         function waterColor(vary) {
@@ -432,11 +451,11 @@
         }
 
         function oilColor(vary) {
-            return hcy2rgb(floating(20, vary ? 5 : 0), floating(.85, vary ? .03 : 0), floating(.3, vary ? .03: 0))
+            return hcy2rgb(floating(20, vary ? 5 : 0), floating(.85, vary ? .03 : 0), floating(.3, vary ? .03 : 0))
         }
 
         function fireColor(vary) {
-            return hcy2rgb(floating(15, vary ? 5 : 0), floating(.95, vary ? .03 : 0), floating(.5, vary ? .03: 0))
+            return hcy2rgb(floating(15, vary ? 5 : 0), floating(.95, vary ? .03 : 0), floating(.5, vary ? .03 : 0))
         }
 
         function floating(v, dv) {
