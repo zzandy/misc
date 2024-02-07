@@ -8,6 +8,53 @@
 </head>
 
 <body>
+    <!-- color -->
+    <script type="text/javascript">
+
+        function hcy2rgb(h, c, y) {
+            // 601
+            const r = .3;
+            const g = .59;
+            const b = .11;
+
+            const h0 = h;
+            h /= 60;
+
+            const k = (1 - Math.abs((h % 2) - 1));
+
+            const K = h < 1 ? r + k * g
+                : h < 2 ? g + k * r
+                    : h < 3 ? g + k * b
+                        : h < 4 ? b + k * g
+                            : h < 5 ? b + k * r
+                                : r + k * b;
+
+            let cmax = 1;
+
+            if (y <= 0 || y >= 1) cmax = 0;
+            else cmax *= K < y ? (y - 1) / (K - 1) : K > y ? y / K : 1;
+            c = Math.min(c, cmax);
+
+            const x = c * k;
+            const rgb = h < 1 ? [c, x, 0]
+                : h < 2 ? [x, c, 0]
+                    : h < 3 ? [0, c, x]
+                        : h < 4 ? [0, x, c]
+                            : h < 5 ? [x, 0, c]
+                                : [c, 0, x];
+
+            const m = y - (r * rgb[0] + g * rgb[1] + b * rgb[2]);
+
+            const rgbdata = [rgb[0] + m, rgb[1] + m, rgb[2] + m];
+            return [(rgbdata[0] * 255) | 0, (rgbdata[1] * 255) | 0, (rgbdata[2] * 255) | 0, 255];
+
+        }
+
+        function stringColor(tuple) {
+            return `rgb(${tuple[0]}, ${tuple[1]}, ${tuple[2]})`;
+        }
+
+    </script>
     <script type="text/javascript">
         function addCanvas(w, h, dontAdd) {
             const canvas = document.createElement('canvas');
@@ -82,40 +129,49 @@
 
                 ++Button.n;
             }
+
+            isOver(x, y) {
+                return this.x <= x && this.x + this.w >= x && this.y <= y && this.y + this.h >= y
+            }
         }
 
         class Pixel {
             static air = Symbol('air');
             static sand = Symbol('sand');
             static water = Symbol('water');
+            static oil = Symbol('oil');
             static acid = Symbol('acid');
             static fire = Symbol('fire');
             static wood = Symbol('wood');
             static steam = Symbol('steam');
+            static stone = Symbol('stone');
 
-            constructor(type) {
-                this.tick = -1;
+            constructor(type, tick) {
                 this.type = type || Pixel.air;
-                this.color = Pixel.getColor(this.type);
+                this.color = Pixel.getColor(this.type, tick);
                 this.vetor = 0;
                 this.decay = this.type == Pixel.steam ? (450 + 100 * Math.random()) : -1;
             }
 
-            static getColor(type) {
+            static getColor(type, tick) {
                 var seed = Math.random();
                 switch (type) {
                     case Pixel.wood:
                         return [0x99 + 10 - 20 * seed, 0x33 + 10 - 20 * seed, 0x33 + 10 - 20 * seed, 255];
                     case Pixel.fire:
-                        return [0xff - 10 * seed, 0x28 + 10 - 20 * seed, 0x00 + 10 * seed, 255];
+                        return fireColor(true);
+                    case Pixel.oil:
+                        return oilColor(true);
                     case Pixel.water:
-                        return [0x11 + 10 - 20 * seed, 0x64 + 10 - 20 * seed, 0xb4 + 10 - 20 * seed, 255];
+                        return waterColor(true);
                     case Pixel.acid:
-                        return [0xcc + 10 - 20 * seed, 0xff - 10 * seed, 0x00 + 10 * seed, 255];
+                        return [0xdc + 10 - 20 * seed, 0xff - 10 * seed, 0x20 + 10 * seed, 255];
                     case Pixel.steam:
                         return [0x99 + 10 - 20 * seed, 0x99 + 20 - 40 * seed, 0x99 + 20 - 40 * seed, 255];
                     case Pixel.sand:
-                        return [0xf7 + 10 - 20 * seed, 0xe9 + 10 - 20 * seed, 0x8e + 10 - 20 * seed, 255];
+                        return sandColor(tick, true);
+                    case Pixel.stone:
+                        return hcy2rgb(70, .1, rnd(.65, .75))
                     default:
                         const k = 0;
                         return [k, k, k, 0];
@@ -126,7 +182,6 @@
         loop(100, init, update, render);
 
         function init() {
-
             const [w, h] = [window.innerWidth, window.innerHeight];
             const ctx = addCanvas(w, h);
 
@@ -136,7 +191,7 @@
 
             ctx.imageSmoothingEnabled = false;
 
-            const k = 4
+            const k = 6;
             const [wid, hei] = [w / k | 0, h / k | 0];
             const buf = addCanvas(wid, hei, true);
             const img = buf.getImageData(0, 0, wid, hei);
@@ -148,23 +203,27 @@
 
             const buttons = [
                 new Button('sand', '#f7e98e', Pixel.sand),
-                new Button('fire', '#ff2800', Pixel.fire),
-                new Button('water', '#1164b4', Pixel.water),
+                new Button('fire', stringColor(fireColor()), Pixel.fire),
+                new Button('oil', stringColor(oilColor()), Pixel.oil),
+                new Button('water', stringColor(waterColor()), Pixel.water),
                 new Button('steam', '#999999', Pixel.steam),
                 new Button('acid', '#ccff00', Pixel.acid),
                 new Button('wood', '#993333', Pixel.wood),
-                new Button('air', 'black', Pixel.air)
+                new Button('air', 'black', Pixel.air),
+                new Button('stone', 'silver', Pixel.stone)
             ];
 
+            const counters = buttons.reduce((obj, btn) => { obj[btn.generator] = 0; return obj }, {});
+
             const mouse = { isDown: false, x: 0, y: 0 }
-            const world = { tick: 0, data, ctx, buf, img, renderWidth: w, renderHeight: h, simulationWidth: wid, simulationHeight: hei, buttons, activeButton: 0, mouse };
+            const world = { tick: 0, data, ctx, buf, img, renderWidth: w, renderHeight: h, simulationWidth: wid, simulationHeight: hei, buttons, activeButton: 0, mouse, counters };
 
             let isMouseDown = false;
 
             ctx.canvas.addEventListener('click', e => {
                 for (let i in buttons) {
                     let button = buttons[i];
-                    if (i != world.activeButton && button.x <= e.clientX && button.x + button.w >= e.clientX && button.y <= e.clientY && button.y + button.h >= e.clientY) {
+                    if (i != world.activeButton && button.isOver(e.clientX, e.clientY)) {
                         world.activeButton = i;
                         return;
                     }
@@ -172,6 +231,8 @@
             });
 
             ctx.canvas.addEventListener('mousedown', e => {
+                for (const button of buttons)
+                    if (button.isOver(e.clientX, e.clientY)) return;
                 mouse.isDown = true;
             });
 
@@ -193,10 +254,14 @@
         }
 
         function displaces(type1, type2) {
-            return type2 == Pixel.air
-                || type2 == Pixel.steam
-                || type1 == Pixel.sand && type2 == Pixel.water
-                || type1 == Pixel.water && type2 == Pixel.acid
+
+            if (type1 == type2) return false;
+
+            return type2 == Pixel.air || type2 == Pixel.steam
+                || type1 == Pixel.sand && (type2 == Pixel.fire || type2 == Pixel.water || type2 == Pixel.oil || type2 == Pixel.acid)
+                || type1 == Pixel.fire && (type2 == Pixel.water || type2 == Pixel.oil || type2 == Pixel.acid)
+                || type1 == Pixel.water && (type2 == Pixel.oil || type2 == Pixel.acid)
+                || type1 == Pixel.oil && type2 == Pixel.acid
         }
 
         function noop(type) {
@@ -208,23 +273,21 @@
         }
 
         function update(world) {
-
             ++world.tick;
-            const { mouse, tick, simulationWidth: w, data, next } = world;
+            const { mouse, tick, simulationWidth: w, data, next, counters } = world;
 
             if (mouse.isDown) {
-                add(data, w, mouse.x, mouse.y, world.buttons[world.activeButton].generator);
+                add(data, w, mouse.x, mouse.y, world.buttons[world.activeButton].generator, counters);
             }
 
             const l = data.length;
 
             const a = Math.random() < .5 ? 1 : -1;
-            const k = 8;
 
             let start = tick % 2 == 0 ? 0 : (l - 1);
             let step = tick % 2 == 0 ? 1 : -1;
 
-            for (let i = start; i < l && i > 0; i += step) {
+            for (let i = start; i < l && i >= 0; i += step) {
                 let x = i % w;
                 let y = i / w | 0
 
@@ -236,6 +299,7 @@
                 let target = i;
 
                 switch (pixel.type) {
+                    case Pixel.oil:
                     case Pixel.water:
                     case Pixel.acid:
                     case Pixel.fire:
@@ -260,7 +324,7 @@
                     case Pixel.steam:
                         if (--pixel.decay <= 0) {
                             pixel.type = Math.random() < .4 ? Pixel.water : Pixel.air;
-                            pixel.color = Pixel.getColor(pixel.type);
+                            pixel.color = Pixel.getColor(pixel.type, pixel.tick);
                             break;
                         }
 
@@ -282,7 +346,7 @@
                         else if (!lazy && x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
                             target = i + w + a;
                         }
-                        else if (!lazy && x + a < w && x + a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
+                        else if (!lazy && x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
                             target = i + w - a;
                         }
 
@@ -317,20 +381,22 @@
 
             i = 0;
             for (let button of world.buttons) {
-                ctx.fillStyle = button.fillStyle;
+                ctx.fillStyle = button.generator == Pixel.sand ? stringColor(sandColor(world.counters[Pixel.sand])) : button.fillStyle;
                 ctx.fillRect(button.x, button.y, button.w, button.h);
 
                 ctx.strokeStyle = i++ == world.activeButton
                     ? 'white'
-                    : 'black';
+                    : '#555';
 
                 ctx.strokeRect(button.x + .5, button.y + .5, button.w, button.h);
             }
         }
 
-        function add(data, w, x, y, type) {
+        function add(data, w, x, y, type, counters) {
             const r = 6;
-            const threshold = type == Pixel.air ? 1 : .2;
+            const threshold = type == Pixel.air ? 1
+                : type === Pixel.stone || type === Pixel.wood ? .95 : .2;
+
 
             switch (type) {
                 default:
@@ -344,7 +410,7 @@
                                 const d = (dx * dx + dy * dy) / (r * r);
 
                                 if (d < 1 && (1 - d) * (1 - d) > Math.random())
-                                    put(data, w, x + dx, y + dy, type);
+                                    put(data, w, x + dx, y + dy, type, ++counters[type]);
                             }
                         }
                     }
@@ -352,9 +418,34 @@
             }
         }
 
-        function put(data, w, x, y, type) {
+        function put(data, w, x, y, type, tick) {
             if (x >= 0 && x < w && y >= 0 && y * w + x < data.length && (type == Pixel.air || data[y * w + x].type == Pixel.air))
-                data[y * w + x] = new Pixel(type);
+                data[y * w + x] = new Pixel(type, tick);
+        }
+
+        function sandColor(tick, vary) {
+            return hcy2rgb(floating(tick / 120, vary ? 5 : 0), .8, floating(.6, vary ? .03 : 0))
+        }
+
+        function waterColor(vary) {
+            return hcy2rgb(floating(200, vary ? 5 : 0), floating(.65, vary ? .03 : 0), floating(.6, vary ? .03 : 0))
+        }
+
+        function oilColor(vary) {
+            return hcy2rgb(floating(20, vary ? 5 : 0), floating(.85, vary ? .03 : 0), floating(.3, vary ? .03: 0))
+        }
+
+        function fireColor(vary) {
+            return hcy2rgb(floating(15, vary ? 5 : 0), floating(.95, vary ? .03 : 0), floating(.5, vary ? .03: 0))
+        }
+
+        function floating(v, dv) {
+            dv = dv || 0;
+            return dv > 0 ? v - dv + 2 * dv * Math.random() : v
+        }
+
+        function rnd(a, b) {
+            return a + (b - a) * Math.random();
         }
     </script>
 </body>
