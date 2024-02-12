@@ -273,7 +273,7 @@
 
         function update(world) {
             ++world.tick;
-            const { mouse, lastMouse, tick, simulationWidth: w, data, next, counters } = world;
+            const { mouse, lastMouse, tick, simulationWidth: w, simulationHeight: h, data, next, counters } = world;
 
             if (mouse.isDown) {
                 for (let [x, y] of plotLine(mouse.x, mouse.y, lastMouse[0], lastMouse[1])) {
@@ -291,78 +291,86 @@
             let start = tick % 2 == 0 ? 0 : (l - 1);
             let step = tick % 2 == 0 ? 1 : -1;
 
-            for (let i = start; i < l && i >= 0; i += step) {
-                let x = i % w;
-                let y = i / w | 0
+            let ox = tick % 2 == 0 ? 0 : w - 1;
+            let oy = h - 1;
 
-                const pixel = data[i];
+            let dx = ox == 0 ? 1 : -1;
+            let dy = oy == 0 ? 1 : -1;
 
-                if (pixel.type != Pixel.air && pixel.tick == tick) continue;
+            for (let y = oy; y < h && y >= 0; y += dy) {
+                for (let x = ox; x < w && x >= 0; x += dx) {
 
-                const lazy = noop(pixel.type);
-                let target = i;
+                    let i = y * w + x ;
 
-                switch (pixel.type) {
-                    case Pixel.oil:
-                    case Pixel.water:
-                    case Pixel.acid:
-                    case Pixel.fire:
-                        if (i + w < l && displaces(pixel.type, data[i + w].type)) {
-                            target = i + w;
-                        }
-                        else if (x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
-                            target = i + w + a;
-                        }
-                        else if (x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
-                            target = i + w - a;
-                        }
-                        else if (!lazy && x + a < w && x + a >= 0 && i + a < l && displaces(pixel.type, data[i + a].type)) {
-                            target = i + a;
-                        }
-                        else if (!lazy && x - a < w && x - a >= 0 && i - a < l && displaces(pixel.type, data[i - a].type)) {
-                            target = i - a;
-                        }
+                    const pixel = data[i];
 
-                        break;
+                    if (pixel.type != Pixel.air && pixel.tick == tick) continue;
 
-                    case Pixel.steam:
-                        if (--pixel.decay <= 0) {
-                            pixel.type = Math.random() < .4 ? Pixel.water : Pixel.air;
-                            pixel.color = Pixel.getColor(pixel.type, pixel.tick);
+                    const lazy = noop(pixel.type);
+                    let target = i;
+
+                    switch (pixel.type) {
+                        case Pixel.oil:
+                        case Pixel.water:
+                        case Pixel.acid:
+                        case Pixel.fire:
+                            if (i + w < l && displaces(pixel.type, data[i + w].type)) {
+                                target = i + w;
+                            }
+                            else if (x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
+                                target = i + w + a;
+                            }
+                            else if (x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
+                                target = i + w - a;
+                            }
+                            else if (!lazy && x + a < w && x + a >= 0 && i + a < l && displaces(pixel.type, data[i + a].type)) {
+                                target = i + a;
+                            }
+                            else if (!lazy && x - a < w && x - a >= 0 && i - a < l && displaces(pixel.type, data[i - a].type)) {
+                                target = i - a;
+                            }
+
                             break;
-                        }
 
-                        moves = [i - w, i - w + a, i - w - a, i - a, i + a];
-                        moves.sort(() => Math.random() - .5);
-
-                        for (let move of moves) {
-                            if (move >= 0 && move < l && Math.abs(x - move % w) < 5 && displaces(pixel.type, data[move].type)) {
-                                target = move;
+                        case Pixel.steam:
+                            if (--pixel.decay <= 0) {
+                                pixel.type = Math.random() < .4 ? Pixel.water : Pixel.air;
+                                pixel.color = Pixel.getColor(pixel.type, pixel.tick);
                                 break;
                             }
-                        }
-                        break;
 
-                    case Pixel.sand:
-                        if (i + w < l && displaces(pixel.type, data[i + w].type)) {
-                            target = i + w;
-                        }
-                        else if (!lazy && x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
-                            target = i + w + a;
-                        }
-                        else if (!lazy && x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
-                            target = i + w - a;
-                        }
+                            moves = [i - w, i - w + a, i - w - a, i - a, i + a];
+                            moves.sort(() => Math.random() - .5);
 
-                        break;
+                            for (let move of moves) {
+                                if (move >= 0 && move < l && Math.abs(x - move % w) < 5 && displaces(pixel.type, data[move].type)) {
+                                    target = move;
+                                    break;
+                                }
+                            }
+                            break;
+
+                        case Pixel.sand:
+                            if (i + w < l && displaces(pixel.type, data[i + w].type)) {
+                                target = i + w;
+                            }
+                            else if (!lazy && x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
+                                target = i + w + a;
+                            }
+                            else if (!lazy && x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
+                                target = i + w - a;
+                            }
+
+                            break;
+                    }
+
+                    if (target != i) {
+                        [data[i], data[target]] = [data[target], data[i]]
+                        data[target].tick = tick;
+                    }
+
+                    data[i].tick = tick;
                 }
-
-                if (target != i) {
-                    [data[i], data[target]] = [data[target], data[i]]
-                    data[target].tick = tick;
-                }
-
-                data[i].tick = tick;
             }
 
             return world;
@@ -428,7 +436,7 @@
         }
 
         function sandColor(tick, vary) {
-            let hue = (tick / 200) % 360;
+            let hue = ((tick+rnd(-10, 10)) / 200) % 360;
             let sat = .7;
             let lig = .6;
 
