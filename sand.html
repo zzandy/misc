@@ -77,12 +77,12 @@
 
             let doRender = true;
 
-            let then = Date.now();
+            let then = performance.now();
 
-            window.requestAnimationFrame(frame);
+            requestAnimationFrame(frame);
 
             function frame() {
-                let now = Date.now();
+                let now = performance.now();
                 time += now - then;
                 then = now;
 
@@ -93,20 +93,19 @@
                     world = update(world);
                     doRender = true;
 
-                    if (++numLoops > 100) {
+                    if (++numLoops > 50) {
                         console.log('overload')
                         time = 0;
                         break;
                     }
                 }
 
-
                 if (doRender) {
                     doRender = false;
                     render(world);
                 }
 
-                window.requestAnimationFrame(frame);
+                requestAnimationFrame(frame);
             }
         }
     </script>
@@ -144,13 +143,41 @@
             static fire = Symbol('fire');
             static wood = Symbol('wood');
             static steam = Symbol('steam');
+            static smoke = Symbol('smoke');
             static stone = Symbol('stone');
 
             constructor(type, tick) {
-                this.type = type || Pixel.air;
+                this.setType(type || Pixel.air, tick);
+            }
+
+            setType(type, tick) {
+                this.type = type;
                 this.color = Pixel.getColor(this.type, tick);
-                this.vetor = 0;
-                this.decay = this.type == Pixel.steam ? (450 + 100 * Math.random()) : -1;
+                this.integrity = Pixel.getIntegrity(this.type)
+                this.chaos = Math.random() < .5 ? 1 : -1;
+                this.tick = tick;
+            }
+
+            static getIntegrity(type) {
+                switch (type) {
+                    case Pixel.steam:
+                    case Pixel.smoke: return rnd(450, 500);
+                    case Pixel.wood: return rnd(80, 120);
+                    case Pixel.sand: return rnd(300, 350);
+                    case Pixel.stone: return rnd(1000, 1200);
+                    case Pixel.acid: return rnd(300, 1000);
+                    default: return -1;
+                }
+            }
+
+            static getFluidity(type) {
+                switch (type) {
+                    case Pixel.water: return 7;
+                    case Pixel.oil: return 5;
+                    case Pixel.acid: return 9;
+                    case Pixel.fire: return 4;
+                    default: return 0;
+                }
             }
 
             static getColor(type, tick) {
@@ -167,6 +194,8 @@
                     case Pixel.acid:
                         return [0xdc + 10 - 20 * seed, 0xff - 10 * seed, 0x20 + 10 * seed];
                     case Pixel.steam:
+                        return [0xb9 + 10 - 20 * seed, 0xb9 + 20 - 40 * seed, 0xb9 + 20 - 40 * seed];
+                    case Pixel.smoke:
                         return [0x99 + 10 - 20 * seed, 0x99 + 20 - 40 * seed, 0x99 + 20 - 40 * seed];
                     case Pixel.sand:
                         return sandColor(tick, true);
@@ -178,7 +207,7 @@
             }
         }
 
-        loop(100, init, update, render);
+        loop(120, init, update, render);
 
         function init() {
             const [w, h] = [window.innerWidth, window.innerHeight];
@@ -215,7 +244,10 @@
             const counters = buttons.reduce((obj, btn) => { obj[btn.generator] = 0; return obj }, {});
 
             const mouse = { isDown: false, x: 0, y: 0 }
-            const world = { tick: 0, data, ctx, buf, img, renderWidth: w, renderHeight: h, simulationWidth: wid, simulationHeight: hei, buttons, activeButton: 0, mouse, counters, lastMouse: [mouse.x, mouse.y] };
+            const world = {
+                tick: 0, data, ctx, buf, img, renderWidth: w, renderHeight: h, simulationWidth: wid,
+                simulationHeight: hei, buttons, activeButton: 0, mouse, counters, lastMouse: [mouse.x, mouse.y]
+            };
 
             let isMouseDown = false;
 
@@ -256,19 +288,11 @@
 
             if (type1 == type2) return false;
 
-            return type2 == Pixel.air || type2 == Pixel.steam
+            return type2 == Pixel.air || type2 == Pixel.steam || type2 == Pixel.smoke
                 || type1 == Pixel.sand && (type2 == Pixel.fire || type2 == Pixel.water || type2 == Pixel.oil || type2 == Pixel.acid)
                 || type1 == Pixel.fire && (type2 == Pixel.water || type2 == Pixel.oil || type2 == Pixel.acid)
                 || type1 == Pixel.water && (type2 == Pixel.oil || type2 == Pixel.acid)
                 || type1 == Pixel.oil && type2 == Pixel.acid
-        }
-
-        function noop(type) {
-            return Math.random() < (
-                type == Pixel.sand ? .2
-                    : type == Pixel.water ? .1
-                        : -1
-            );
         }
 
         function update(world) {
@@ -285,28 +309,20 @@
             lastMouse[1] = mouse.y;
 
             const l = data.length;
-
             const a = Math.random() < .5 ? 1 : -1;
 
-            let start = tick % 2 == 0 ? 0 : (l - 1);
-            let step = tick % 2 == 0 ? 1 : -1;
+            const ox = (tick % 2) ? 0 : (w - 1);
+            const dx = ox == 0 ? 1 : -1;
 
-            let ox = tick % 2 == 0 ? 0 : w - 1;
-            let oy = h - 1;
-
-            let dx = ox == 0 ? 1 : -1;
-            let dy = oy == 0 ? 1 : -1;
-
-            for (let y = oy; y < h && y >= 0; y += dy) {
+            for (let y = h - 1; y >= 0; --y) {
                 for (let x = ox; x < w && x >= 0; x += dx) {
-
-                    let i = y * w + x ;
+                    let i = y * w + x;
 
                     const pixel = data[i];
 
                     if (pixel.type != Pixel.air && pixel.tick == tick) continue;
+                    pixel.tick = tick;
 
-                    const lazy = noop(pixel.type);
                     let target = i;
 
                     switch (pixel.type) {
@@ -314,28 +330,88 @@
                         case Pixel.water:
                         case Pixel.acid:
                         case Pixel.fire:
-                            if (i + w < l && displaces(pixel.type, data[i + w].type)) {
-                                target = i + w;
+                            const fluidity = Pixel.getFluidity(pixel.type)
+
+                            for (let f = 0; f < fluidity; ++f) {
+
+                                const ty = y + 1;
+                                if (ty >= h) break;
+
+                                let tx = x - f * dx;
+                                if (tx < 0 || tx >= w) continue;
+
+                                let t = ty * w + tx;
+
+                                if (displaces(pixel.type, data[t].type)) {
+                                    target = t;
+                                    break;
+                                }
+
+                                tx = x + f * dx;
+                                if (tx < 0 || tx >= w) continue;
+
+                                t = ty * w + tx;
+
+                                if (displaces(pixel.type, data[t].type)) {
+                                    target = t;
+                                    break;
+                                }
                             }
-                            else if (x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
-                                target = i + w + a;
+
+                            if (target == i && (x > 0 && !displaces(pixel.type, data[i - 1].type) || x < w - 1 && displaces(pixel.type, data[i + 1].type)))
+                                for (let f = fluidity - 1; f > 0; --f) {
+
+                                    let tx = x + f * dx;
+                                    if (tx < 0 || tx >= w) continue;
+
+                                    let t = y * w + tx;
+
+                                    if (displaces(pixel.type, data[t].type)) {
+                                        target = t;
+                                        break;
+                                    }
+
+                                    tx = x - f * dx;
+                                    if (tx < 0 || tx >= w) continue;
+
+                                    t = y * w + tx;
+
+                                    if (displaces(pixel.type, data[t].type)) {
+                                        target = t;
+                                        break;
+                                    }
+                                }
+
+                            if (pixel.type == Pixel.acid && --pixel.integrity <= 0) {
+                                pixel.setType(Pixel.smoke);
                             }
-                            else if (x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
-                                target = i + w - a;
+
+                            if (y < h - 1 && pixel.type == Pixel.acid && (data[i + w].type == Pixel.water || (data[i + w].type == Pixel.wood || data[i + w].type == Pixel.sand || data[i + w].type == Pixel.stone) && data[i + w].integrity-- <= 0)) {
+                                pixel.setType(Pixel.smoke, tick);
+                                data[i + w].setType(Pixel.smoke, tick);
                             }
-                            else if (!lazy && x + a < w && x + a >= 0 && i + a < l && displaces(pixel.type, data[i + a].type)) {
-                                target = i + a;
+
+                            if (y < h - 1 && pixel.type == Pixel.fire && data[i + w].type == Pixel.water) {
+                                pixel.setType(Pixel.stone, tick);
+                                data[i + w].setType(Pixel.steam, tick);
                             }
-                            else if (!lazy && x - a < w && x - a >= 0 && i - a < l && displaces(pixel.type, data[i - a].type)) {
-                                target = i - a;
+
+                            if (y < h - 1 && pixel.type == Pixel.water && data[i + w].type == Pixel.fire) {
+                                pixel.setType(Pixel.steam, tick);
+                                data[i + w].setType(Pixel.stone, tick);
                             }
 
                             break;
 
                         case Pixel.steam:
-                            if (--pixel.decay <= 0) {
-                                pixel.type = Math.random() < .4 ? Pixel.water : Pixel.air;
-                                pixel.color = Pixel.getColor(pixel.type, pixel.tick);
+                        case Pixel.smoke:
+                            if (--pixel.integrity <= 0) {
+                                if (pixel.type == Pixel.steam) {
+                                    pixel.setType(Math.random() < .4 ? Pixel.water : Pixel.air, tick);
+                                }
+                                else {
+                                    pixel.setType(Pixel.air, tick);
+                                }
                                 break;
                             }
 
@@ -354,10 +430,10 @@
                             if (i + w < l && displaces(pixel.type, data[i + w].type)) {
                                 target = i + w;
                             }
-                            else if (!lazy && x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
+                            else if (x + a < w && x + a >= 0 && i + w + a < l && displaces(pixel.type, data[i + w + a].type)) {
                                 target = i + w + a;
                             }
-                            else if (!lazy && x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
+                            else if (x - a < w && x - a >= 0 && i + w - a < l && displaces(pixel.type, data[i + w - a].type)) {
                                 target = i + w - a;
                             }
 
@@ -368,8 +444,6 @@
                         [data[i], data[target]] = [data[target], data[i]]
                         data[target].tick = tick;
                     }
-
-                    data[i].tick = tick;
                 }
             }
 
@@ -386,9 +460,8 @@
                 [data[i * 4], data[i * 4 + 1], data[i++ * 4 + 2]] = pixel.color;
             }
 
-            //ctx.clearRect(0, 0, w, h);
-
             buf.putImageData(img, 0, 0);
+
             ctx.drawImage(buf.canvas, 0, 0, w, h);
 
             i = 0;
@@ -436,7 +509,7 @@
         }
 
         function sandColor(tick, vary) {
-            let hue = ((tick+rnd(-10, 10)) / 200) % 360;
+            let hue = ((tick + rnd(-10, 10)) / 200) % 360;
             let sat = .7;
             let lig = .6;
 
@@ -463,7 +536,7 @@
         }
 
         function oilColor(vary) {
-            return hcy2rgb(floating(20, vary ? 5 : 0), floating(.85, vary ? .03 : 0), floating(.3, vary ? .03 : 0))
+            return hcy2rgb(floating(30, vary ? 5 : 0), floating(.85, vary ? .03 : 0), floating(.4, vary ? .03 : 0))
         }
 
         function fireColor(vary) {
@@ -507,7 +580,6 @@
 
             return line;
         }
-
     </script>
 </body>
 
