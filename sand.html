@@ -208,6 +208,15 @@
             }
         }
 
+        const reactions = {};
+        reactions[Pixel.acid] = [
+            [[Pixel.water], true, Pixel.smoke, Pixel.steam],
+            [[Pixel.sand, Pixel.wood, Pixel.stone, Pixel.lava], false, Pixel.smoke, Pixel.smoke]
+        ];
+        reactions[Pixel.lava] == [[Pixel.water], true, Pixel.sand, Pixel.steam];
+
+
+
         loop(120, init, update, render);
 
         function init() {
@@ -393,24 +402,24 @@
                                 if (c != -1) target = c;
                             }
 
-
                             if (pixel.type == Pixel.acid && --pixel.integrity <= 0) {
                                 pixel.setType(Pixel.smoke);
                             }
+                            else {
 
-                            if (y < h - 1 && pixel.type == Pixel.acid && (data[i + w].type == Pixel.water || (data[i + w].type == Pixel.wood || data[i + w].type == Pixel.sand || data[i + w].type == Pixel.stone || data[i + w].type == Pixel.lava) && data[i + w].integrity-- <= 0)) {
-                                pixel.setType(Pixel.smoke);
-                                data[i + w].setType(data[i + w].type == Pixel.water ? Pixel.steam : Pixel.smoke);
-                            }
+                                if (pixel.type in reactions) {
+                                    const dirs = [i + w, i + pdx, i - pdx, i - w];
 
-                            if (y < h - 1 && pixel.type == Pixel.lava && data[i + w].type == Pixel.water) {
-                                pixel.setType(Pixel.sand, 10000);
-                                data[i + w].setType(Pixel.steam);
-                            }
-
-                            if (y < h - 1 && pixel.type == Pixel.water && data[i + w].type == Pixel.lava) {
-                                pixel.setType(Pixel.steam);
-                                data[i + w].setType(Pixel.sand, 10000);
+                                    for (let [reagents, skipIntegrity, resultA, resultB] of reactions[pixel.type]) {
+                                        for (let dir of dirs) {
+                                            if (dir >= 0 && dir < l && Math.abs(x - dir % w) < 5 && reagents.includes(data[dir].type) && (skipIntegrity || data[dir].integrity-- <= 0)) {
+                                                pixel.setType(resultA);
+                                                data[dir].setType(resultB);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
                             }
 
                             break;
