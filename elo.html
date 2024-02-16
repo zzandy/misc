@@ -7,106 +7,72 @@
 
     <style type="text/css">
         html {
-            font-size: 62.5%;
-        }
-
-        * {
-            font-size: 1.6rem;
-        }
-
-        html,
-        body,
-        input,
-        textarea,
-        button {
-            background-color: #121212;
-            color: #fbfbfb;
-            border: none;
-            border-radius: .5rem;
-            line-height: 3rem;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
         }
 
         body {
-            padding-top: 1rem;
-        }
-
-        button {
-            padding: 0 1rem;
-            background-color: #3f3f3f;
-            box-shadow: .3rem .3rem .3rem #121212;
-            border-radius: .5rem;
-            font-weight: bold;
-        }
-
-        textarea {
-            padding: 0 1rem;
-        }
-
-        body {
-            max-width: 90rem;
-            margin: 0 auto
+            width: 50rem;
+            margin: 2rem auto;
         }
 
         .pane {
-            background-color: #1d1d1d;
-            border-radius: .5rem;
-            box-shadow: .3rem .3rem .3rem #0d0d0d;
-            padding: 1rem;
+            display: grid;
+            gap: .3rem;
+            padding: .5rem;
+            border-radius: .2rem;
         }
 
-        .pane>div {
-            margin-bottom: 3rem
+        .one-two {
+            grid-template-columns: 1fr 3fr;
         }
 
-        #input * {
-            display: block;
+        .three {
+            grid-template-columns: 1fr 1fr 1fr;
         }
 
-        #contest button {
-            min-width: 15rem;
+        .row {
+            grid-column: span 3;
         }
 
-        li>span {
-            color: #777;
+        .one-two .row {
+            grid-column: span 2;
+        }
+
+        .small {
+            font-size: 50%;
+            margin: 0 .6em;
+        }
+
+        li::marker {
+            font-size: 60%;
         }
     </style>
 
 </head>
 
 <body>
-    <div id="input" class="pane">
-        <div>
-            <label for="input-question">Question:</label>
-            <input id="input-question" type="text" size="80" />
-        </div>
-        <div>
-            <label for="input-text">One option per line:</label>
-            <textarea id="input-text" cols="80" rows="10"></textarea>
-        </div>
-        <div>
-            <button onclick="startContest()">Start Contest</button>
-        </div>
+    <div id="input" class="pane one-two">
+        <label for="input-question">Question:</label>
+        <input id="input-question" type="text" />
+        <label for="input-text">One option per line:</label>
+        <textarea id="input-text" rows="12"></textarea>
+        <span id="info"></span>
+        <button id="start" onclick="startContest()" disabled>Start Contest</button>
     </div>
 
-    <div id="contest" style="display: none;" class="pane">
-        <div id="question"></div>
-        <div>
-            <button id="left"></button>
-            <button id="neither">Neither</button>
-            <button id="right"></button>
-        </div>
-        <div>
-            <button onclick="done()">Done</button>
-        </div>
+    <div id="contest" style="display: none;" class="pane three">
+        <div id="question" class="row"></div>
+        <button id="left"></button>
+        <button id="neither">Neither</button>
+        <button id="right"></button>
+        <span id="progress"></span>
+        <button onclick="done()">Done</button>
     </div>
 
-    <div id="results" style="display: none;" class="pane">
-        <div>
-            <ol id="listing"></ol>
-        </div>
-        <div>
-            <button onclick="restart()">Restart</button>
-        </div>
+    <div id="results" style="display: none;" class="pane three">
+        <ol id="listing" class="row"></ol>
+        <span></span>
+        <button onclick="restart()">Restart</button>
     </div>
 
     <script type="text/javascript">
@@ -141,19 +107,162 @@
     </script>
 
     <script type="text/javascript">
+        class StateMachine {
+            constructor(initialState, stateMap) {
+                StateMachine.validate(stateMap)
+                this.stateMap = stateMap;
+                this.defaultState = Object.keys(stateMap)[0]
+                this.state = initialState;
+                this.#enter(Object.keys(stateMap)[0])
+            }
 
+            #enter(stateName, doReplaceState) {
+                const url = location.pathname + (stateName == this.defaultState ? '' : '#' + stateName) + location.search;
+
+                if (doReplaceState || stateName == this.currentState) {
+                    history.replaceState(this.state, '', url);
+                }
+                else {
+                    history.pushState(this.state, '', url);
+                }
+
+                this.currentState = stateName;
+
+                let state = this.stateMap[stateName];
+                if (!state) console.warn('No such state \"' + stateName + '\"');
+
+                if (state && state.$enter) state.$enter(this.state);
+            }
+
+            #leave(stateName) {
+                let state = this.stateMap[stateName];
+                if (state && state.$leave) state.$leave();
+            }
+
+            set(stateName, state) {
+                this.#leave(this.currentState)
+                this.state = state;
+                this.#enter(stateName)
+            }
+
+            act(eventName, doReplaceState) {
+                const state = this.stateMap[this.currentState];
+                if (!state) return;
+
+                const transition = state[eventName];
+                if (!transition) return;
+
+                this.#leave(this.currentState)
+                this.#enter(transition(this.state), doReplaceState)
+            }
+
+            static validate(stateMap) {
+                for (const state in stateMap) {
+                    if (!state.startsWith('is')) throw new Error('State names must start with "is", found \"' + event + '\"');
+
+                    for (const event in stateMap[state]) {
+                        if (!event.startsWith('on') && event != '$enter' && event != '$leave') throw new Error('Event names must start with "on", found ' + event + ' in mapping for ' + state);
+                    }
+                }
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
         // panes
-        const input = document.getElementById('input');
-        const contest = document.getElementById('contest');
-        const results = document.getElementById('results');
+        const input = get('input');
+        const contest = get('contest');
+        const results = get('results');
 
-        const left = document.getElementById('left');
-        const right = document.getElementById('right');
-        const neither = document.getElementById('neither');
+        const left = get('left');
+        const right = get('right');
+        const neither = get('neither');
 
-        const listing = document.getElementById('listing');
+        const listing = get('listing');
+        const info = get('info');
+        const progress = get('progress');
+        const start = get('start');
 
-        let options = null;
+        const state = { pairs: [], question: '', index: -1, options: [] };
+
+        // events change state
+        // states set ui
+        const stateMachine = new StateMachine(state, {
+            isCreating: {
+                $enter: (state) => { show(input); },
+                $leave: () => { hide(input) },
+
+                onDone: (state) => {
+                    state.options = getLines().map(text => ({ text, rating: defaultRating }));
+                    state.question = get('input-question').value;
+                    state.pairs = buildPairs(state.options)
+                    state.index = 0;
+                    return 'isVoting';
+                }
+            },
+
+            isVoting: {
+                $enter: (state) => {
+                    get('question').textContent = state.question;
+                    runPairs(state.index, state.pairs);
+
+                    if (stateMachine.currentState == 'isVoting')
+                        show(contest);
+                },
+                $leave: () => { hide(contest) },
+
+                onVote: (state) => {
+                    state.index++;
+                    return 'isVoting';
+                },
+
+                onDone: (state) => {
+                    return 'isViewing';
+                }
+            },
+
+            isViewing: {
+                $enter: (state) => {
+
+                    state.options.sort((a, b) => {
+                        return b.rating - a.rating;
+                    });
+
+                    listing.replaceChildren(
+                        ...state.options.map(({ text, rating }) => {
+                            const e = document.createElement('li');
+                            e.innerText = text;
+                            const r = document.createElement('span');
+                            r.innerText = rating | 0;
+                            r.className = 'small';
+                            e.appendChild(r);
+                            return e;
+                        }));
+
+                    show(results);
+                },
+                $leave: () => { hide(results) },
+
+                onRestart: () => {
+                    return 'isCreating';
+                }
+            }
+        });
+
+        addEventListener('popstate', (e) => {
+            stateMachine.set(location.hash == '' ? stateMachine.defaultState : location.hash.substring(1), e.state);
+        });
+
+        get('input-question').addEventListener('input', validateInitialState)
+        get('input-text').addEventListener('input', validateInitialState);
+
+        function validateInitialState() {
+            const l = getLines().length
+            const n = l * (l - 1) / 2;
+            info.innerText = n + ' combination' + (n == 1 ? '' : 's');
+
+            start.disabled = n < 3 || get('input-question').value.length < 3;
+        };
 
         function show(el) {
             el.style.display = '';
@@ -163,56 +272,28 @@
             el.style.display = 'none';
         }
 
-        function startContest() {
-            options = document.getElementById('input-text').value
+        function getLines() {
+            return get('input-text').value
                 .split('\n').map(text => text.trim())
                 .filter(text => text != '')
                 .filter((text, i, values) => i == values.indexOf(text))
-                .map(text => ({ text, rating: defaultRating }));
+        }
 
-            runContest();
+        function startContest() {
+            stateMachine.act('onDone');
         }
 
         function restart() {
-            show(input);
-            hide(results);
-            hide(contest);
-        }
-
-        function runContest() {
-            hide(input);
-            hide(results);
-            show(contest);
-
-            document.getElementById('question').textContent = document.getElementById('input-question').value;
-
-            let pairs = [];
-
-            for (let i = 0; i < options.length; ++i) {
-                for (let j = i + 1; j < options.length; ++j) {
-                    if (Math.random() < .5)
-                        pairs.push([options[i], options[j]]);
-                    else
-                        pairs.push([options[j], options[i]]);
-                }
-            }
-
-            for (let i = pairs.length - 1; i >= 0; --i) {
-                let x = (Math.random() * i) | 0;
-                let a = pairs[x];
-                pairs[x] = pairs[i];
-                pairs[i] = a;
-            }
-
-            runPairs(0, pairs, options);
+            stateMachine.act('onRestart');
         }
 
         function runPairs(index, pairs) {
             if (index >= pairs.length) {
-                showResults();
+                stateMachine.act('onDone', true);
                 return;
             }
 
+            progress.innerText = `${index + 1} out of ${pairs.length}`;
             const p = pairs[index];
 
             left.innerText = p[0].text;
@@ -224,7 +305,7 @@
                 p[1].rating = res[1];
 
                 unbind();
-                runPairs(++index, pairs);
+                stateMachine.act('onVote');
             };
 
             const clickRight = () => {
@@ -233,7 +314,7 @@
                 p[1].rating = res[1];
 
                 unbind();
-                runPairs(++index, pairs);
+                stateMachine.act('onVote');
             };
 
             const clickNone = () => {
@@ -242,7 +323,7 @@
                 p[1].rating = res[1];
 
                 unbind();
-                runPairs(++index, pairs);
+                stateMachine.act('onVote');
             };
 
             const unbind = () => {
@@ -253,7 +334,7 @@
 
             done = () => {
                 unbind();
-                showResults();
+                stateMachine.act('onDone');
             }
 
             left.addEventListener('click', clickLeft)
@@ -262,30 +343,37 @@
         }
 
         function done() {
-            showResults();
+            stateMachine.act('onDone');
         }
 
-        function showResults() {
-            hide(input);
-            show(results);
-            hide(contest);
-
-            options.sort((a, b) => {
-                return b.rating - a.rating;
-            });
-
-            listing.replaceChildren(
-                ...options.map(opt => {
-                    const entry = document.createElement('li');
-                    entry.innerHTML = `${opt.text} <span>${opt.rating.toFixed(0)}</span>`;
-                    return entry;
-                }));
-
-            options = null;
+        function span(text) {
+            const e = document.createElement('span');
+            e.innerText = text;
+            return e;
         }
 
         function get(id) {
             return document.getElementById(id);
+        }
+
+        function buildPairs(options) {
+            const pairs = [];
+            for (let i = 0; i < options.length; ++i) {
+                for (let j = i + 1; j < options.length; ++j) {
+                    if (Math.random() < .5)
+                        pairs.push([options[i], options[j]]);
+                    else
+                        pairs.push([options[j], options[i]]);
+                }
+            }
+
+            for (let i = pairs.length - 1; i >= 0; --i) {
+                let x = (Math.random() * i) | 0;
+
+                [pairs[x], pairs[i]] = [pairs[i], pairs[x]]
+            }
+
+            return pairs;
         }
     </script>
 </body>
