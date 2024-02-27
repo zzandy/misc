@@ -7,9 +7,7 @@
 </head>
 
 <body>
-
     <script name="loop" type="text/javascript">
-
         function loop(targetFps, fixedUpdate, render) {
             let fixedDelta = 1000 / targetFps;
             let acc = fixedDelta;
@@ -37,11 +35,9 @@
     </script>
 
     <script name="canvas" type="text/javascript">
-
-        // canvas w/ hex
         function fullscreenCanvas() {
-            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
-            ctx.translate(can.width / 2, can.height / 2);
+
+            const [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
 
             document.body.appendChild(can);
             document.body.style.overflow = "hidden";
@@ -52,72 +48,93 @@
         }
 
         function makeCanvas(width, height, alpha) {
-
-            let can = document.createElement('canvas');
-            let ctx = can.getContext('2d', { alpha });
+            const can = document.createElement('canvas');
+            const ctx = can.getContext('2d', { alpha });
 
             ctx.canvas.width = width;
             ctx.canvas.height = height;
             ctx.canvas.style.display = 'block';
 
-            ctx.clear = function () {
-                ctx.clearRect(-ctx.canvas.width / 2, -ctx.canvas.height / 2, ctx.canvas.width, ctx.canvas.height);
-            };
-
-            let q = 1 / Math.sqrt(3);
-
-            ctx.getHexPath = function (h) {
-                let dx = q * h / 2;
-                let dy = h / 2;
-
-                return [2 * dx, 0
-                    , dx, -dy
-                    , -dx, -dy
-                    , -2 * dx, 0
-                    , -dx, dy
-                    , dx, dy];
-            }
-
-            ctx.makePath = function (vertices) {
-                this.beginPath();
-                this.moveTo(vertices[0], vertices[1]);
-                for (let i = 2; i < vertices.length; i += 2) {
-                    this.lineTo(vertices[i], vertices[i + 1]);
-                }
-                this.closePath();
-            }
-
-            ctx.pathHex = function (h) {
-                this.makePath(this.getHexPath(h));
-            };
-
-            ctx.fillHex = function (x, y, h) {
-                this.save();
-                this.translate(x, y);
-                this.pathHex(h);
-                this.fill();
-                this.restore();
-            };
-
-            ctx.strokeHex = function (x, y, a) {
-                this.save();
-                this.translate(x, y);
-                this.pathHex(a);
-                this.stroke();
-                this.restore();
-            };
-
             return [can, ctx];
+        }
+    </script>
+
+    <script name="color" type="text/javascript">
+        function hcy2rgb(h, c, y) {
+            // 601
+            const r = .3;
+            const g = .59;
+            const b = .11;
+
+            const h0 = h;
+            h /= 60;
+
+            const k = (1 - Math.abs((h % 2) - 1));
+
+            const K = h < 1 ? r + k * g
+                : h < 2 ? g + k * r
+                    : h < 3 ? g + k * b
+                        : h < 4 ? b + k * g
+                            : h < 5 ? b + k * r
+                                : r + k * b;
+
+            let cmax = 1;
+
+            if (y <= 0 || y >= 1) cmax = 0;
+            else cmax *= K < y ? (y - 1) / (K - 1) : K > y ? y / K : 1;
+            c = Math.min(c, cmax);
+
+            const x = c * k;
+            const rgb = h < 1 ? [c, x, 0]
+                : h < 2 ? [x, c, 0]
+                    : h < 3 ? [0, c, x]
+                        : h < 4 ? [0, x, c]
+                            : h < 5 ? [x, 0, c]
+                                : [c, 0, x];
+
+            const m = y - (r * rgb[0] + g * rgb[1] + b * rgb[2]);
+
+            const rgbdata = [rgb[0] + m, rgb[1] + m, rgb[2] + m];
+            return `rgb(${(rgbdata[0] * 255) | 0}, ${(rgbdata[1] * 255) | 0}, ${(rgbdata[2] * 255) | 0})`;
+        }
+    </script>
+
+    <script name="supercell" type="text/javascript">
+        // SuperCell
+
+        class SuperCell {
+            constructor(rank) {
+                if (rank < 1)
+                    throw new Error('SuperCell rank cannot be less than 1');
+
+                this.rank = rank;
+                this.extent = 4 * rank + 1;
+            }
+
+            contains = function (i, j) {
+                let r = this.rank;
+
+                let h2 = r * 2;
+
+                let a = 8 * r + 1;
+                let b = 6 * r + 1;
+                let c = 4 * r - 1;
+
+                return j * 2 - i + h2 - (a + b) / 2 <= 0
+                    && j * 2 - i + h2 - (a - b) / 2 >= 0
+                    && j * 1 / 2 - i + h2 - (c + b) / 4 <= 0
+                    && j * 1 / 2 - i + h2 - (c - b) / 4 >= 0
+                    && j * -1 - i + h2 + (c + b) / 2 >= 0
+                    && j * -1 - i + h2 + (c - b) / 2 <= 0;
+            }
         }
     </script>
 
     <script name="field" type="text/javascript">
         // Field 
-
         class Field {
-
             constructor(mi, mj, makeCell) {
-                this._length = 0;
+                this.length = 0;
                 let body = [];
 
                 for (let i = 0; i < mi; ++i) {
@@ -135,12 +152,13 @@
                 this.generator = makeCell;
                 this.body = body;
             }
-            get length() {
-                return this._length;
-            }
 
             get(i, j) {
                 return i >= 0 && i < this.mi && j >= 0 && j < this.mj ? this.body[i][j] : null;
+            }
+
+            set(i, j, value) {
+                if (i >= 0 && i < this.mi && j >= 0 && j < this.mj && this.body[i][j] != null) this.body[i][j] = value;
             }
 
             getAdj(i, j) {
@@ -157,103 +175,25 @@
                 return adj;
 
                 function add(i, j) {
-
                     let res = self.get(i, j);
                     if (res !== null) adj.push([i, j, res]);
-
                 }
             }
 
             forEach(processCell) {
                 for (let i = 0; i < this.mi; ++i)
                     for (let j = 0; j < this.mj; ++j)
-                        if (this.body[i][j] !== null)
-                            processCell(i, j, this.body[i][j]);
-            }
-
-            evolve(processCell) {
-                let body = [];
-
-                for (let i = 0; i < this.mi; ++i) {
-                    let row = [];
-
-                    for (let j = 0; j < this.mj; ++j) {
-                        let cell = this.body[i][j];
-                        row.push(cell === null ? null : processCell(i, j, cell));
-                    }
-
-                    body.push(row);
-                }
-
-                this.body = body;
+                        if (this.body[i][j] !== null) {
+                            const newValue = processCell(i, j, this.body[i][j]);
+                            if (newValue !== undefined) this.body[i][j] = newValue
+                        }
             }
         }
     </script>
 
-    <script name="supercell" type="text/javascript">
-
-        // SuperCell
-        (function (global) {
-            "use strict";
-
-            function SuperCell(rank) {
-                if (rank < 1)
-                    throw new Error('SuperCell rank cannot be less than 1');
-
-                this.rank = rank;
-            }
-
-            function getDimension() {
-                return 4 * this.rank + 1;
-            }
-
-            Object.defineProperty(SuperCell.prototype, 'width', { get: getDimension });
-            Object.defineProperty(SuperCell.prototype, 'height', { get: getDimension });
-
-            SuperCell.prototype.contains = function (i, j) {
-                let r = this.rank;
-
-                let h2 = r * 2;
-
-                let a = 8 * r + 1;
-                let b = 6 * r + 1;
-                let c = 4 * r - 1;
-
-                return j * 2 - i + h2 - (a + b) / 2 <= 0
-                    && j * 2 - i + h2 - (a - b) / 2 >= 0
-                    && j * 1 / 2 - i + h2 - (c + b) / 4 <= 0
-                    && j * 1 / 2 - i + h2 - (c - b) / 4 >= 0
-                    && j * -1 - i + h2 + (c + b) / 2 >= 0
-                    && j * -1 - i + h2 + (c - b) / 2 <= 0;
-            }
-
-            global.SuperCell = SuperCell;
-        }(this));
-
-    </script>
-
-    <script name="moving-average" type="text/javascript">
-        function MovingAverage(n) {
-            this.samples = new Array(n);
-            this.pointer = 0;
-        }
-
-        MovingAverage.prototype.addSample = function (sample) {
-            this.samples[this.pointer++] = sample;
-            if (this.pointer >= this.samples.length)
-                this.pointer = 0;
-        }
-
-        MovingAverage.prototype.average = function () {
-            let res = this.samples.reduce(function (sumobj, value) { return { sum: sumobj.sum + value, count: sumobj.count + 1 } }, { sum: 0, count: 0 });
-
-            return res.sum / res.count;
-        }
-    </script>
-
-    <script type="text/javascript">
-
+    <script name="math" type="text/javascript">
         const sq32 = Math.sqrt(3) / 2;
+        const isq3 = 1 / Math.sqrt(3);
         const tau = 2 * Math.PI;
 
         function hexToPix(i, j, h) {
@@ -265,24 +205,180 @@
 
         function rnd() {
             switch (arguments.length) {
-
                 case 1:
                     if (arguments[0] instanceof Array)
                         return arguments[0][Math.floor(Math.random() * arguments[0].length)];
-                    else return arguments[0] * Math.random();
+                    else return (arguments[0] * Math.random()) | 0;
                 case 2:
-                    return arguments[0] + Math.random() * (arguments[1] - arguments[0]);
+                    return (arguments[0] + Math.random() * (arguments[1] - arguments[0])) | 0;
                 case 0:
                 default:
                     return Math.random();
             }
         }
+    </script>
 
-        let colors = ["rgb(255,40,20)", "rgb(153,153,153)", "rgb(238,139,0)", "rgb(139,167,0)", "rgb(0,185,169)", "rgb(94,121,255)", "rgb(207,0,248)"];
-        let p1color = randomColor();
-        let p2color = randomColor(p1color);
+    <script type="text/javascript">
 
+        const colors = [
+            hcy2rgb(0, 1, .4),
+            hcy2rgb(0, 0, .7),
+            hcy2rgb(50, 1, .8),
+            hcy2rgb(100, 1, .6),
+            hcy2rgb(190, 1, .4),
+            hcy2rgb(230, 1, .3),
+            hcy2rgb(280, 1, .3),
+        ];
+
+        const s = 35;
         const r = 7;
+
+        const ctx = fullscreenCanvas();
+
+        let p1color = 0;
+        let p2color = 5;
+        let winner = -1;
+
+        // add buttons
+        let cursor = [];
+        let chosenColor = -1;
+        addEventListener('keydown', ({ key }) => {
+            if (key > '0' && key <= colors.length.toString()) chosenColor = key - 1;
+        });
+        addEventListener('mousemove', ({ clientX, clientY }) => cursor = [clientX, clientY]);
+
+        const buttons = colors.map((_, color) => {
+            const width = 60;
+            const height = 35;
+            const pad = 50;
+            const ox = (ctx.canvas.width - colors.length * width) / 2;
+            const oy = ctx.canvas.height - pad - height;
+
+            const x = ox + color * width;
+            const y = oy;
+
+            const g = ctx.createRadialGradient(x + width / 2, y + height, 0, x + width / 2, y + 1.5 * height, width / 2);
+            g.addColorStop(0, '#fff');
+            g.addColorStop(.5, '#fff5');
+            g.addColorStop(1, '#fff0');
+
+            return {
+                color,
+                hover(x1, y1) {
+                    return x1 > x && x1 < x + width && y1 > y && y1 < y + height;
+                },
+                render(hover) {
+                    const active = winner == -1 && color != p1color && color != p2color
+                    ctx.fillStyle = active ? colors[color] : '#222';
+                    ctx.fillRect(x, y, width, height);
+
+                    if (active && hover) {
+                        ctx.fillStyle = g;
+                        ctx.fillRect(x, y, width, height);
+                    }
+
+                    ctx.font = '16px system-ui';
+
+                    ctx.fillStyle = '#000';
+                    ctx.fillText(color + 1, x + 3, y + (height + 10) / 2 + 1);
+
+                    ctx.fillStyle = active ? '#fff' : '#444';
+                    ctx.fillText(color + 1, x + 3, y + (height + 10) / 2);
+                }
+            }
+        });
+
+        addEventListener('mousedown', ({ clientX, clientY }) => {
+            const button = buttons.filter(btn => btn.hover(clientX, clientY));
+            if (button[0]) chosenColor = button[0].color;
+        });
+
+        const supercell = new SuperCell(r);
+        const clusters = {};
+        const adjacency = {};
+
+        let lastCluserId = 0;
+        let lastRecheck = 0;
+        function addCluster(color, ...points) {
+            clusters[lastCluserId] = { color, points, reachable: 0 };
+            adjacency[lastCluserId] = [];
+
+            return lastCluserId++;
+        }
+
+        const cells = new Field(supercell.extent, supercell.extent, (i, j) => supercell.contains(i, j)
+            ? addCluster(rnd(colors.length), [i, j])
+            : null);
+
+        let p1toplay = true;
+        let playdelay = 0;
+
+        // build adjacency
+        cells.forEach((i, j, cluster) => {
+            for (const [_, __, other] of cells.getAdj(i, j)) {
+                adjacency[cluster].push(other);
+            }
+        });
+
+        function findByPoint(i, j) {
+            for (const clusterId in clusters) {
+                if (clusters[clusterId].points.some(point => point[0] == i && point[1] == j)) return +clusterId;
+            }
+
+            throw `Could not find cluster for point [${i}, ${j}]`;
+        }
+
+        function merge(cluster, otherCluster) {
+            for (let [i, j] of clusters[otherCluster].points) cells.set(i, j, cluster);
+            clusters[cluster].points.push(...clusters[otherCluster].points);
+
+            for (const neighbour of adjacency[otherCluster]) {
+                adjacency[neighbour] = adjacency[neighbour].filter(c => c != otherCluster);
+
+                if (cluster != neighbour) {
+                    if (!adjacency[neighbour].includes(cluster))
+                        adjacency[neighbour].push(cluster);
+
+                    if (!adjacency[cluster].includes(neighbour))
+                        adjacency[cluster].push(neighbour);
+                }
+            }
+
+            delete clusters[otherCluster];
+            delete adjacency[otherCluster]
+        }
+
+        function tryMerge(clusterId) {
+            let modified = false;
+            const color = clusters[clusterId].color;
+            for (otherCluster of adjacency[clusterId])
+                if (otherCluster != p1cluster && otherCluster != p2cluster && otherCluster in clusters && clusters[otherCluster].color == color) {
+                    merge(clusterId, otherCluster);
+                    modified = true;
+                }
+
+            return modified;
+        }
+
+        function recheckConnections(homeCluster, enemyCluster) {
+            lastRecheck++;
+            clusters[enemyCluster].reachable = lastRecheck;
+
+            let pending = [...adjacency[enemyCluster].filter(c => c != homeCluster)];
+
+            while (pending.length) {
+                const next = pending.pop();
+                clusters[next].reachable = lastRecheck;
+
+                pending.push(...adjacency[next].filter(c => c != homeCluster && clusters[c].reachable != lastRecheck));
+            }
+
+            for (const other in clusters) {
+                if (other != homeCluster && other != enemyCluster && clusters[other].reachable != lastRecheck) merge(homeCluster, other);
+            }
+        }
+
+        // fill players bases
         let corners = [
             [2 * r, r - 1],
             [2 * r, r],
@@ -297,345 +393,132 @@
             [r, -r],
             [r + 1, 1 - r],
         ].map(([i, j]) => [i + 2 * r, j + 2 * r]);
-        let p1root = corners[8];
-        let p2root = corners[2];
 
-        let buttons = [];
+        const p1cluster = findByPoint(...corners[8]);
+        const p2cluster = findByPoint(...corners[2]);
 
-        function setColor(color) {
-            let noop = color == p1color || color == p2color;
+        clusters[p1cluster].color = p1color
+        clusters[p2cluster].color = p2color
 
-            if (!noop)
-                p1color = color;
+        merge(p1cluster, findByPoint(...corners[9]))
+        merge(p1cluster, findByPoint(corners[9][0], corners[9][1] + 1))
 
-            buttons.forEach(button => {
-                button.style.opacity = button.color == p1color || button.color == p2color
-                    ? '.2'
-                    : '1';
-            });
+        merge(p2cluster, findByPoint(...corners[3]))
+        merge(p2cluster, findByPoint(corners[3][0], corners[3][1] - 1))
 
-            if (noop) return;
+        let modified = false;
+        do {
+            modified = false;
 
-            if (fill(p1root, p1color) > fld.length / 2)
-                console.log('game over');
-        }
+            modified &= tryMerge(p1cluster);
+            modified &= tryMerge(p2cluster);
 
-        let ctx = fullscreenCanvas();
-
-        (function () {
-            let container = document.createElement('div');
-
-            buttons = colors.map((color, i) => {
-                let button = document.createElement('span');
-                button.style.backgroundColor = color;
-                button.style.display = 'inline-block';
-                button.style.minWidth = '5em';
-                button.style.minHeight = '2em';
-
-                button.addEventListener('click', () => setColor(i));
-
-                container.appendChild(button);
-                return { style: button.style, color: i };
-            })
-
-            container.style.position = 'absolute';
-            container.style.top = '0';
-            container.style.left = '0';
-            container.style.width = '100%';
-            document.body.appendChild(container)
-        })();
-
-        setColor(p1color);
-
-        let s = 35;
-        let isSimple = true;
-
-        class Cell {
-            constructor(colorIndex, visibleColorIndex, switchCountdown) {
-                this.colorIndex = colorIndex;
-                this.visibleColorIndex = visibleColorIndex ?? colorIndex;
-                this.switchCountdown = switchCountdown ?? 0;
+            for (const clusterId in adjacency) {
+                modified &= tryMerge(clusterId);
             }
+        } while (modified);
 
-            setColor(colorIndex, switchCountdown) {
-                this.colorIndex = colorIndex;
-                this.switchCountdown = switchCountdown;
-            }
-        }
-
-        function getGenerator(sc, colors) {
-
-            const baseColor = randomColor();
-
-            let p1base = [corners[8], corners[9], [corners[9][0], corners[9][1] + 1]];
-            let p2base = [corners[2], corners[3], [corners[3][0], corners[3][1] - 1]];
-
-            let p1buffer = [[p1base[0][0], p1base[0][1] + 1], [p1base[2][0], p1base[2][1] + 1], [p1base[1][0] + 1, p1base[0][1] + 1], [p1base[2][0] + 1, p1base[2][1] + 1]];
-            let p2buffer = [[p2base[0][0], p2base[0][1] - 1], [p2base[2][0], p2base[2][1] - 1], [p2base[1][0] - 1, p2base[0][1] - 1], [p2base[2][0] - 1, p2base[2][1] - 1]]
-
-            let n = 0;
-            return function (i, j) {
-                return sc.contains(i, j)
-                    ? new Cell(pickColor(i, j), baseColor, 15 + (i + j) + (rnd(5)) | 0)
-                    : null;
-            }
-
-            function pickColor(i, j) {
-                if (positionMatch(i, j, p1base)) return p1color;
-                if (positionMatch(i, j, p1buffer)) return randomColor(p1color);
-                if (positionMatch(i, j, p2base)) return p2color;
-                if (positionMatch(i, j, p2buffer)) return randomColor(p2color);
-
-                return randomColor();
-            }
-        }
-
-        function positionMatch(i, j, collection) {
-            return collection.some(([pi, pj]) => pi == i && pj == j);
-        }
-
-        let prerendered = (() => {
-            let outer = ctx.getHexPath(.98 * s);
-            let inner = ctx.getHexPath(.85 * s);
-
-            let extent = outer.reduce((extent, coord, i) => {
-
-                let k = i % 2;
-                extent[k] = Math.min(extent[k], coord)
-                extent[k + 2] = Math.max(extent[k + 2], coord)
-                return extent;
-
-            }, [0, 0, 0, 0]);
-
-            let w = Math.ceil(extent[2]) - Math.floor(extent[0]);
-            let h = Math.ceil(extent[3]) - Math.floor(extent[1]);
-
-            return colors.map(color => {
-                let [can, c] = makeCanvas(w, h, true);
-                c.translate(w / 2, h / 2);
-                renderHex(c, s, color);
-                return can;
-            })
-        })();
-
-        let sc = new SuperCell(r);
-        let fld = new Field(sc.width, sc.height, getGenerator(sc, colors));
-        let ijorigin = sc.rank * 2;
-
-        let front = [[...p1root, fld.get(...p1root)]];
-        let clusters = [];
-        startCluster(...front[0]);
-
-        function startCluster(i, j, node) {
-            let cluster = { colorIndex: node.colorIndex, nodes: [[i, j, node]], index: clusters.length };
-            node.cluster = cluster;
-            clusters.push(cluster);
-        }
-
-        let n = 0;
-        while (front.length > 0 && ++n < fld.length) {
-            let [i, j, cell] = front.shift();
-            let cluster = cell.cluster;
-
-            for (let [ai, aj, adjcell] of fld.getAdj(i, j)) {
-                let other = adjcell.cluster;
-                if (other == null) {
-                    if (adjcell.colorIndex == cell.colorIndex) {
-                        other = adjcell.cluster = cluster
-                        other.nodes.push([ai, aj, adjcell])
-                    }
-                    else {
-                        for (let [_, __, adjcell2] of fld.getAdj(ai, aj)) {
-                            if (adjcell2.cluster != null && adjcell2.colorIndex == adjcell.colorIndex) {
-                                other = adjcell.cluster = adjcell2.cluster
-                                other.nodes.push([ai, aj, adjcell])
-                                break;
-                            }
-                        }
-
-                        if (other == null) {
-                            startCluster(ai, aj, adjcell)
-                        }
-                    }
-                    front.push([ai, aj, adjcell])
-                }
-                else if (cluster != other && cluster.colorIndex == other.colorIndex) {
-                    console.log(cluster.index, 'eats', other.index)
-                    cluster.nodes.push(...other.nodes);
-                    other.nodes.forEach(([_, __, c]) => c.cluster = cluster);
-                    clusters[other.index] = null;
-                }
-            }
-        }
-        clusters = clusters.filter(x => x != null)
-
-        for (let i = clusters.length - 1; i > 0; --i) {
-            const idx = rnd(i + 1) | 0;
-            [clusters[i], clusters[idx]] = [clusters[idx], clusters[i]];
-        }
-
-        console.log(clusters.length)
-
-        n = 0;
-        for (let cluster of clusters) {
-            let m = 0;
-
-            for (let [i, j, cell] of cluster.nodes) {
-                cell.switchCountdown = n/10  + (m++);
-            }
-
-            ++n;
-        }
-
-        function renderHex(ctx, s, color) {
-            ctx.save();
-
-            let outer = ctx.getHexPath(.98 * s);
-            let inner = ctx.getHexPath(.85 * s);
-
-            ctx.fillStyle = color;
-            ctx.makePath(outer);
-            ctx.fill();
-
-            ctx.restore();
-
-            if (isSimple) return;
-
-            ctx.globalCompositeOperation = 'screen';
-
-            let grad = ctx.createLinearGradient(0, s / 2, 0, -s / 2);
-            grad.addColorStop(1, 'rgba(255,255,255, .3)');
-            grad.addColorStop(.8, 'rgba(255,255,255,0)');
-            grad.addColorStop(.6, 'rgba(255,255,255,0)');
-            grad.addColorStop(.1, 'rgba(255,255,255, .4)');
-            grad.addColorStop(0, 'rgba(255,255,255,.2)');
-
-            ctx.fillStyle = grad;
-            ctx.fill();
-
-            grad = ctx.createLinearGradient(0, .7 * s / 2, 0, .7 * -s / 2);
-            grad.addColorStop(1, 'rgba(255,255,255, .4)');
-            grad.addColorStop(0, 'rgba(255,255,255,0)');
-
-            ctx.fillStyle = grad;
-            ctx.makePath(inner);
-            ctx.fill();
-
-            let l = outer.length;
-            let mode = ['screen', 'screen', 'screen', 'screen', 'multiply', 'multiply'];
-            let tints = [
-                'rgba(255, 255, 255, .0)', 'rgba(255, 255, 255, .0)',
-                'rgba(255, 255, 255, .2)', 'rgba(255, 255, 255, .4)',
-                'rgba(255, 255, 255, .2)', 'rgba(255, 255, 255, .1)',
-                'rgba(255, 255, 255, .0)', 'rgba(255, 255, 255, .0)',
-                'rgba(0, 0, 0, .1)', 'rgba(0, 0, 0, .3)',
-                'rgba(0, 0, 0, .3)', 'rgba(0, 0, 0, .2)'
-            ];
-
-            for (let i = 0; i < l; i += 2) {
-
-                grad = ctx.createLinearGradient(outer[i], outer[i + 1], inner[(i + 3) % l], inner[(i + 4) % l]);
-
-                grad.addColorStop(0, tints[i]);
-                grad.addColorStop(1, tints[i + 1]);
-
-                ctx.fillStyle = grad;
-
-                ctx.makePath([
-                    outer[i], outer[i + 1], outer[(i + 2) % l], outer[(i + 3) % l],
-                    inner[(i + 2) % l], inner[(i + 3) % l], inner[i], inner[i + 1]
-                ]);
-
-                ctx.globalCompositeOperation = mode[i / 2];
-                ctx.fill();
-            }
-
-            ctx.restore();
-        }
-
-        function render(i, j, cell) {
-            let pos = hexToPix(i - ijorigin, j - ijorigin, s);
-            let x = pos[0], y = pos[1];
-
-            ctx.drawImage(prerendered[cell.visibleColorIndex], x - prerendered[cell.visibleColorIndex].width / 2, y - prerendered[cell.visibleColorIndex].height / 2);
-            ctx.fillText(cell.cluster?.index, x, y)
-        }
-
-        let colorChange = new Accumulator(2000);
-        let phase = 0;
-
-        function Accumulator(target) {
-            this.target = target;
-            this.value = 0;
-        }
-
-        Accumulator.prototype.add = function (value) {
-            this.value += value;
-
-            if (this.value > this.target) {
-                this.value -= this.target;
-                return true;
-            }
-
-            return false;
-        }
-
-        let fixedFps = new MovingAverage(100);
-        let updateFps = new MovingAverage(100);
-
-        loop(60, fixedUpdate, update);
-
-        function fixedUpdate(delta) {
-            fixedFps.addSample(delta);
-
-            let newTarget = null;
-
-            if (colorChange.add(delta)) {
-                newTarget = fld.generator(0, 0);
-            }
-
-            fld.evolve(function (i, j, cell) {
-                if (cell.colorIndex != cell.visibleColorIndex && --cell.switchCountdown <= 0) {
-                    cell.visibleColorIndex = cell.colorIndex;
-                }
-
-                return cell;
-            });
-        }
+        loop(60, update, render);
 
         function update(delta) {
-            updateFps.addSample(delta);
+            if (winner == -1) {
+                if (p1toplay && chosenColor != -1 && chosenColor != p1color && chosenColor != p2color) {
+                    p1color = clusters[p1cluster].color = chosenColor;
+                    p1toplay = false;
+                    playdelay = 500;
+                    if (tryMerge(p1cluster)) recheckConnections(p1cluster, p2cluster);
+                }
 
-            ctx.clear();
-            fld.forEach(render);
-        }
+                if (p1toplay == false && (playdelay -= delta) < 0) {
 
-        function reportfps() {
-            console.log('fixed: ' + 1000 / fixedFps.average() + '; update: ' + 1000 / updateFps.average())
-        }
+                    chosenColor = Object.entries(adjacency[p2cluster]
+                        .filter(id => clusters[id].color != p1color)
+                        .reduce((agg, id) => {
+                            if (!(clusters[id].color in agg)) agg[clusters[id].color] = 0;
+                            agg[clusters[id].color] += clusters[id].points.length;
+                            return agg;
+                        }, {}))
+                        .reduce(([bestColor, bestScore], [color, score]) => score > bestScore ? [color, score] : [bestColor, bestScore], [-1, 0])[0]
 
-        function randomColor(exception) {
-            let color = rnd(colors.length) | 0;
-            while (color == exception)
-                color = rnd(colors.length) | 0;
+                    while (chosenColor == -1 || chosenColor == p1color || chosenColor == p2color) chosenColor = rnd(colors.length)
+                    p2color = clusters[p2cluster].color = chosenColor;
+                    p1toplay = true;
+                    if (tryMerge(p2cluster)) recheckConnections(p2cluster, p1cluster)
+                }
 
-            return color;
-        }
-
-        function fill(root, color) {
-            let front = [[...root, fld.get(...root)]];
-            let baseColor = front[0][2].colorIndex;
-            let n = 0;
-            while (front.length > 0 && n < fld.length) {
-                let source = front.shift();
-                source[2].setColor(color, 60 * n / fld.length);
-                ++n
-                let adj = fld.getAdj(source[0], source[1]).filter(([i, j, cell]) => cell.colorIndex == baseColor && cell.colorIndex != color && !positionMatch(i, j, front));
-                front.push(...adj);
+                if (clusters[p1cluster].points.length * 100 / lastCluserId > 50) winner = 1;
+                if (clusters[p2cluster].points.length * 100 / lastCluserId > 50) winner = 2;
             }
 
-            return n;
+            chosenColor = -1;
         }
+
+        function render(delta) {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+            // ui
+            for (const button of buttons) button.render(button.hover(...cursor));
+
+            // field
+            ctx.save();
+            ctx.translate(ctx.canvas.width / 2, ctx.canvas.height / 2);
+
+            let [x, y] = hexToPix(corners[8][0] - supercell.rank * 2, corners[8][1] - 1 - supercell.rank * 2, s)
+
+            let score = (clusters[p1cluster].points.length * 100 / lastCluserId).toFixed(1) + '%';
+            let { width } = ctx.measureText(score);
+
+            ctx.fillStyle = 'white';
+            ctx.fillText(score, x - width, y);
+            ctx.fillText((clusters[p2cluster].points.length * 100 / lastCluserId).toFixed(1) + '%', ...hexToPix(corners[3][0] + 1 - supercell.rank * 2, corners[3][1] + 1 - supercell.rank * 2, s));
+
+            for (const clusterId in clusters) {
+                const cluster = clusters[clusterId];
+                cluster.points.forEach(([i, j]) => renderCell(i, j, cluster.color));
+            }
+
+            if (winner != -1) {
+                const message = winner == 1 ? 'You win!' : 'I win! Ha-ha-ha!!!';
+
+                ctx.fillStyle = '#2227';
+                ctx.fillRect(-100, -30, 200, 60);
+
+                ctx.font = '24px system-ui';
+                ctx.fillStyle = '#fff';
+
+                let { width: w1 } = ctx.measureText(message);
+                ctx.fillText(message, -w1 / 2, 20);
+
+                let { width: w2 } = ctx.measureText('Game over');
+                ctx.fillText("Game over", -w2 / 2, -7);
+            }
+
+            ctx.restore();
+        }
+
+        function renderCell(i, j, value) {
+            ctx.fillStyle = colors[value];
+            const [x, y] = hexToPix(i - supercell.rank * 2, j - supercell.rank * 2, s);
+
+            fillHex(ctx, x, y, s / 2);
+        }
+
+        function fillHex(ctx, x, y, r) {
+            ctx.beginPath();
+
+            let dx = isq3 * r;
+            let dy = r;
+
+            ctx.moveTo(x + 2 * dx, y + 0);
+            ctx.lineTo(x + dx, y - dy);
+            ctx.lineTo(x - dx, y - dy);
+            ctx.lineTo(x - 2 * dx, y + 0);
+            ctx.lineTo(x - dx, y + dy);
+            ctx.lineTo(x + dx, y + dy);
+
+            ctx.closePath();
+            ctx.fill();
+        }
+
     </script>
 </body>
 
