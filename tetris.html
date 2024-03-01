@@ -83,11 +83,7 @@
         loop(fps, init, update, render);
 
         function getDropDelta(level) {
-            return ((level <= 8
-                ? 8 + (8 - level) * 5
-                : level > 28
-                    ? 1
-                    : (20 - (level - 8)) / 4 + 2) | 0) * frame * 2;
+            return Math.max(100, 1000 - 45 * level);
         }
 
         function savescore(score, level) {
@@ -246,7 +242,6 @@
                 world.burn.length = 0;
                 world.burnWait = 0;
                 reshadow = true;
-
             }
 
             if (world.current == null) {
