@@ -246,7 +246,7 @@
 
             if (world.current == null) {
                 rotation = world.rotation = 0;
-                pos = world.pos = [((width / 2) | 0) - 1, 0]
+                pos = world.pos = [((width / 2) | 0) - 1, -1]
                 reshadow = true;
 
                 if (!isValid(world.next[rotation], pos, field, width, height)) {
@@ -411,7 +411,8 @@
                             if (shadowEnabled)
                                 ctx.strokeRect(x + 1.5, y + ((shadowdepth * scale) | 0) + 1.5, (scale | 0) - 4, (scale | 0) - 4)
 
-                            ctx.fillRect(x, y, (scale | 0) - 1, (scale | 0) - 1);
+                            if (y >= 0)
+                                ctx.fillRect(x, y, (scale | 0) - 1, (scale | 0) - 1);
                         }
                     }
             }
@@ -634,25 +635,14 @@
             return dropHeight;
         }
 
-        function rotatedCopy(fig) {
-            let res = makeArray(0, figSize, figSize);
-
-            for (let i = 0; i < figSize; ++i)
-                for (let j = 0; j < figSize; ++j) {
-                    res[i][j] = fig[j][figSize - 1 - i];
-                }
-
-            return res;
-        }
-
         function isValid(figure, pos, field, width, height) {
             top: for (let i = 0; i < figSize; ++i)
                 for (let j = 0; j < figSize; ++j) {
                     let ny = pos[1] + i;
-                    if (ny >= 0 && figure[i][j] != 0) {
+                    if (figure[i][j] != 0) {
                         let nx = pos[0] + j;
 
-                        if (nx < 0 || nx >= width || ny >= height || field[ny][nx] != 0) {
+                        if (nx < 0 || nx >= width || ny >= height || ny >= 0 && field[ny][nx] != 0) {
                             return false;
                         }
                     }
