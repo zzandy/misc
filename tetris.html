@@ -314,7 +314,7 @@
                             world.burn = solidify(current, pos, field, color);
                             world.linesCleared += world.burn.length;
                             world.linesClearedInLevel += world.burn.length;
-                            world.score += (world.level + 1) * score(world.burn.length)
+                            world.score += score(world.level, world.burn.length)
                             current = world.current = null;
                             input.length = 0;
                             break commandprocessing;
@@ -324,14 +324,14 @@
                     case MOVE:
                         const dh = getDropHeight(current, pos, field);
                         pos[1] += dh;
-                        world.score += dh * 10 * (world.level + 2) / 2;
+                        world.score += score(world.level, dh);
                         world.shadowdepth -= dh;
 
                         if (dh == 0 || command != MOVE) {
                             world.burn = solidify(current, pos, field, color, width);
                             world.linesCleared += world.burn.length;
                             world.linesClearedInLevel += world.burn.length;
-                            world.score += (world.level + 1) * score(world.burn.length)
+                            world.score += score(world.level, world.burn.length)
                             current = world.current = null;
                             input.length = 0;
                         }
@@ -360,7 +360,7 @@
                 }
                 else {
                     world.burn = solidify(current, pos, field, color, width);
-                    world.score += score(world.burn.length);
+                    world.score += score(world.level, world.burn.length);
                     current = world.current = null;
                 }
             }
@@ -597,7 +597,8 @@
                 let marked = false;
                 for (let j = 0; j < figSize; ++j) {
                     if (current[i][j] != 0) {
-                        field[pos[1] + i][pos[0] + j] = color;
+                        if (pos[1] + i >= 0)
+                            field[pos[1] + i][pos[0] + j] = color;
                         if (!marked) {
                             marked = true;
                             rows.unshift(pos[1] + i);
@@ -651,14 +652,9 @@
             return true;
         }
 
-        function score(rows) {
-            switch (rows) {
-                case 1: return 10;
-                case 2: return 25;
-                case 3: return 40;
-                case 4: return 55;
-                default: return 0;
-            }
+        function score(level, rows) {
+            const k = Math.pow(1.2, level)
+            return (5 * (3 * rows - 1) * k) | 0;
         }
     </script>
 </body>
