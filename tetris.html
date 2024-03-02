@@ -292,7 +292,6 @@
                         if (isValid(rotated, pos, field, width, height)) {
                             current = world.current = rotated;
                             reshadow = true;
-
                         }
                         break;
                     case LEFT:
@@ -349,11 +348,11 @@
                 world.dropDelta = getDropDelta(world.level);
             }
 
-            if (reshadow && world.shadowEnabled) {
+            if (current && reshadow && world.shadowEnabled) {
                 world.shadowdepth = getDropHeight(current, pos, field);
             }
 
-            if (moveDown) {
+            if (current && moveDown) {
                 if (isValid(current, [pos[0], pos[1] + 1], field, width, height)) {
                     pos = world.pos = [pos[0], pos[1] + 1];
                     world.shadowdepth -= 1;
