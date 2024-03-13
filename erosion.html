@@ -136,14 +136,14 @@
             let cx = rnd(wid * .2, wid * .8) | 0;
             let cy = rnd(hei * .2, hei * .8) | 0;
 
-            cone(cx, cy, 150, 250 * s);
+            cone(cx, cy, 150, 200 * s);
 
             for (let n = 0; n < 10; ++n) {
                 let a = rnd(0, 360) * deg;
                 let r = rnd(0, wid);
 
                 cone((cx + r * Math.cos(a)) | 0, (cy + r * Math.sin(a)) | 0, rnd(wid / 5, wid / 3), s * rnd(50, 100));
-                plotLine(cx, cy, (cx + r * Math.cos(a)) | 0, (cy + r * Math.sin(a)) | 0).forEach(([x, y], i, a) => cone(x, y, wid/10, 4*(a.length - i) / a.length * s))
+                plotLine(cx, cy, (cx + r * Math.cos(a)) | 0, (cy + r * Math.sin(a)) | 0).forEach(([x, y], i, a) => cone(x, y, wid / 10, 4 * (a.length - i) / a.length * s))
             }
 
             function cone(cx, cy, r, v) {
@@ -208,14 +208,15 @@
         }
 
         function update(world) {
+            //return world;
             const { data, simWidth: w, simHeight: h, s } = world;
             let longestpath = [];
-            for (let t = 0; t < 10000; ++t) {
+            for (let t = 0; t < 1000; ++t) {
                 // waterdrop
                 let x = rnd(0, w) | 0;
                 let y = rnd(0, h) | 0;
                 let path = [[x, y]];
-                let volume = w * 100;
+                let volume = s;
                 let sediment = 0;
                 let speed = 0;
 
@@ -224,13 +225,13 @@
                     let miny = y;
 
                     for (let i = -1; i < 2; ++i) {
-                        let ty = y + i;
-                        if (ty < 0 || ty >= h) continue;
+                        let ty = (y + i + 2 * h) % h;
+                        //if (ty < 0 || ty >= h) continue;
                         for (let j = -1; j < 2; ++j) {
-                            let tx = x + j;
-                            if (tx < 0 || tx >= w) continue;
+                            let tx = (x + j + 2 * w) % w;
+                            if ((i == 0 && j == 0) || tx < 0 || tx >= w) continue;
 
-                            if (data[minx + miny * w] > data[tx + ty * w] && rnd(0, 1) < .8) {
+                            if (data[minx + miny * w] > data[tx + ty * w]) {
                                 minx = tx;
                                 miny = ty;
                             }
@@ -240,12 +241,14 @@
                     if (x == minx && y == miny) break;
 
                     let diff = data[x + y * w] - data[minx + miny * w];
-                    const change = Math.min(s, Math.min(speed, diff) / 2);;
-                    data[x + y * w] -= change;
-                    sediment += change;
-                    speed = diff;
+                    const change = Math.min(s, diff / s);
 
-                    if (sediment > volume * .9) {
+                    speed = (speed + change) / 2;
+                    sediment += speed;
+
+                    data[x + y * w] -= speed;
+
+                    if (sediment > volume * (speed / s)) {
                         const over = sediment - volume * .9;
                         sediment -= over;
                         data[x + y * w] += over;
@@ -273,7 +276,7 @@
 
             let i = 0;
             for (const pixel of world.data) {
-                [data[i * 4], data[i * 4 + 1], data[i++ * 4 + 2]] = palette[Math.max(0, Math.min(1, pixel / (255 * s))) * (palette.length - 1) | 0];
+                [data[i * 4], data[i * 4 + 1], data[i++ * 4 + 2]] = palette[Math.max(0, Math.min(1, Math.pow(pixel / (255 * s), .5))) * (palette.length - 1) | 0];
             }
 
             for (const [x, y] of path) {
