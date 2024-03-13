@@ -8,6 +8,7 @@
     <style>
         html,
         body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             line-height: 1.5rem;
         }
 
@@ -114,9 +115,10 @@
                 waste: graph('purple', 'line'),
                 prod: graph('black', 'line', prodScale),
                 clean: graph('magenta', 'line', prodScale),
-                inc: graph('red', 'bars', incomeScale),
+                inc: graph('#da9100 ', 'bars', incomeScale),
                 sell: graph('navy', 'event'),
                 int: graph('green', 'bars', incomeScale),
+                bal: graph('green', 'line'),
             };
 
             const can = document.getElementById('graph');
@@ -130,7 +132,7 @@
 
             const state = useState({
                 inventory: 0,
-                balance:10000,
+                balance: 1000,
                 price: 1,
                 numAgents: 0,
                 agentLevel: 1,
@@ -141,13 +143,18 @@
                 autosellRate: 0,
                 autosellRateAgg: 0,
                 notes: [],
-                storage: 1000,
+                storage: 0,
                 storageLevel: 1,
                 waste: 0,
                 cleanup: 0,
 
-                clicksPerSec:0,
-                totalClicks: 0
+                clicksPerSec: 0,
+                totalClicks: 0,
+
+                agentLevelProd: 0,
+                agentLevelPeriod: 0,
+                agentLevelCooldown: 0,
+                agents: []
             });
 
             function graph(color, style, scale) {
@@ -175,6 +182,42 @@
 
             function graphScale() {
                 return { min: 0, max: -Infinity, reset: function () { this.max = -Infinity; this.min = 0; } };
+            }
+
+            function agent(rate, period, cooldown) {
+                let producing = false;
+                let acc = 0;
+
+                const a = {
+                    rate, period, cooldown, acc, producing, produce
+                }
+
+                return a;
+
+                function produce(delta) {
+                    let prod = 0;
+
+                    while (1) {
+                        let reminder = duration() - a.acc
+                        if (delta > reminder) {
+                            delta -= reminder;
+                            if (a.producing) prod += a.rate * reminder / 1000;
+
+                            a.acc = 0;
+                            a.producing = !a.producing;
+                        }
+                        else {
+                            a.acc += delta;
+                            if (a.producing) prod += a.rate * delta / 1000;
+                            break;
+                        }
+                    }
+                    return prod;
+                }
+
+                function duration() {
+                    return a.producing ? a.period : a.cooldown;
+                }
             }
 
             function stat() {
@@ -207,8 +250,11 @@
                 return 1000 * (0.00490358 * x4 - 0.0751675 * x3 + 0.372488 * x2 - 0.143111 * x + 0.12843)
             }
 
-            const autoCount = upgradable(dt => state.numAgents += dt, t => t, t => 10 * pow(t, 1.3), () => 'Add agent');
-            const autoRate = upgradable(dt => state.agentLevel += dt, t => 1 + (t - 1) * .05, t => 120 * pow(1.1, t), () => 'Upgrade autoprodution rate');
+            const agentCount = upgradable(dt => state.numAgents += dt, t => t, t => 15 * pow(t, 1.3), () => 'Add agent');
+            const agentProdRate = upgradable(dt => state.agentLevelProd += dt, t => 10 + t * 1, t => 120 * pow(1.2, t), (_, next) => `Upgrade autoprodution rate to ${nice(next)}`);
+            const agentProdPeriod = upgradable(dt => state.agentLevelPeriod += dt, t => 500 + t * 10, t => 150 * pow(1.25, t), (_, next) => `Increase prod duration to ${nice(next / 1000)}s`);
+            const agentCooldownPeriod = upgradable(dt => state.agentLevelCooldown += dt, t => 5000 - t * 100, t => 200 * pow(1.3, t), (_, next) => `Decrease prod cooldown to ${nice(next / 1000)}s`);
+
             const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `${nice(next)}%`);
             const autosell = upgradable(dt => state.autosellLevel += dt, t => !!t * pow(10, t), t => !!t * 10 * pow(10, t) / 5, (value, next) => `${next}`);
             const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => t < 20 ? autosellRatePrice(t + 1) : 1e20, (value, next) => `${next} seconds`);
@@ -254,7 +300,20 @@
             }
 
             loop(60, delta => {
-                const produced = delta * state.numAgents * autoRate.getValue() / 1000;
+
+                if (state.agents.length != state.numAgents) {
+                    state.agents.push(agent(agentProdRate.getValue(), agentProdPeriod.getValue(), agentCooldownPeriod.getValue()));
+                }
+
+                let produced = 0;
+
+                for (let agent of state.agents) {
+                    produced += agent.produce(delta);
+
+                    agent.rate = agentProdRate.getValue();
+                    agent.period = agentProdPeriod.getValue();
+                    agent.cooldown = agentCooldownPeriod.getValue();
+                }
 
                 produce(produced);
 
@@ -286,6 +345,7 @@
             loop(2, () => {
                 graphs.waste.spot = state.waste;
                 graphs.util.spot = 10 * state.inventory / state.storage;
+                graphs.bal.spot = state.balance;
 
                 for (const graph of _graphs) {
                     graph.commit();
@@ -331,8 +391,8 @@
                                 ctx.fillRect(x - 2, height - 9, 3, 3);
                         }
                         else {
-                            if (i == 0) ctx.moveTo(x-.5, y-.5)
-                            else ctx.lineTo(x-.5, y-.5);
+                            if (i == 0) ctx.moveTo(x - .5, y - .5)
+                            else ctx.lineTo(x - .5, y - .5);
                         }
                     }
 
@@ -361,7 +421,7 @@
                     $$: () => `Waste: ${state.waste | 0}${nice(state.cleanup) ? `; ${nice(state.cleanup)} production goes towards cleanup` : ''}`,
                     $if: () => state.waste > 0
                 },
-                numAgents: () => 'Automakers: ' + state.numAgents + '@' + nice(autoRate.getValue()) + ' (' + nice(state.numAgents * autoRate.getValue()) + ' per second)',
+                numAgents: () => 'Automakers: ' + state.numAgents + '@' + nice(agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())),
                 intr: {
                     $$: () => 'Interest: ' + nice(interest.getValue()) + '%',
                     $if: () => state.interestLevel > 0
@@ -393,8 +453,10 @@
                 man: upgrade('Increase manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
                 str: upgradeObj(storage),
                 aut: div.group([
-                    upgradeObj(autoCount),
-                    upgradeObj(autoRate),
+                    upgradeObj(agentCount),
+                    upgradeObj(agentProdRate),
+                    upgradeObj(agentProdPeriod),
+                    upgradeObj(agentCooldownPeriod),
                 ]),
 
                 selss: div.group([
