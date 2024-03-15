@@ -8,7 +8,6 @@
 
 <body>
     <script name="canvas" type="text/javascript">
-        // canvas w/ hex
         function fullscreenCanvas() {
             let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
 
@@ -266,6 +265,10 @@
                     else
                         undo();
                 }
+                else if (e.key == ' ') {
+                    mode = mode == 'mandelbrot' ? 'julia' : 'mandelbrot';
+                    resetRendering();
+                }
                 else if (inprogress && e.key == 'Shift') {
                     centered = true;
                     assingView();
@@ -298,6 +301,7 @@
 
         let colorOffset = .7;
         let maxiterations = 200;
+        let mode = 'mandelbrot';
 
         let maxScale = 5;
 
@@ -323,13 +327,13 @@
         const MAX_WORKERS = 60;
 
         for (let i = 0; i < MAX_WORKERS; ++i) {
-            workers.push(createWorker(worker, handlerWorkerResult, mandlebrot, screenToViewPure));
+            workers.push(createWorker(worker, handlerWorkerResult, mandlebrot, julia, screenToViewPure));
             freeWorkers.push(i);
         }
 
         loop(60, update, render);
 
-        function worker({ data: { workerId, tile, view, w, h, maxiterations } }) {
+        function worker({ data: { workerId, tile, view, w, h, maxiterations, mode } }) {
             let q = Math.pow(2, tile.scale);
             const q2 = q / 2;
             const q3 = q / 3;
@@ -345,15 +349,17 @@
             let n = 0;
             let black = 0;
 
+            const fn = mode == 'julia' ? julia : mandlebrot;
+
             for (let vsample = 0; vsample < nvsamples; ++vsample) {
                 for (let hsample = 0; hsample < nhsamples; ++hsample) {
                     let x = ox + hsample * q;
                     let y = oy + vsample * q;
 
-                    let v = (mandlebrot(...screenToViewPure(x + q2 + q3, y + q2 + q3, view, w, h), maxiterations)
-                        + mandlebrot(...screenToViewPure(x + q2 + q3, y + q2 - q3, view, w, h), maxiterations)
-                        + mandlebrot(...screenToViewPure(x + q2 - q3, y + q2 + q3, view, w, h), maxiterations)
-                        + mandlebrot(...screenToViewPure(x + q2 - q3, y + q2 - q3, view, w, h), maxiterations)) / 4;
+                    let v = (fn(...screenToViewPure(x + q2 + q3, y + q2 + q3, view, w, h), maxiterations)
+                        + fn(...screenToViewPure(x + q2 + q3, y + q2 - q3, view, w, h), maxiterations)
+                        + fn(...screenToViewPure(x + q2 - q3, y + q2 + q3, view, w, h), maxiterations)
+                        + fn(...screenToViewPure(x + q2 - q3, y + q2 - q3, view, w, h), maxiterations)) / 4;
 
                     ++n;
                     if (v == maxiterations) ++black;
@@ -410,7 +416,7 @@
                 let tile = tilequeue.shift();
                 let workerId = freeWorkers.pop();
 
-                workers[workerId].postMessage({ workerId, tile, view, w, h, maxiterations });
+                workers[workerId].postMessage({ workerId, tile, view, w, h, maxiterations, mode });
 
                 if (performance.now() - then > 15) {
                     tilequeue.sort(byPriority)
@@ -492,12 +498,36 @@
             while (n++ < maxiterations) {
                 let aa = a * a;
                 let bb = b * b;
+
+                if (aa + bb > 8) return n;
+
                 let twoab = 2 * a * b;
 
-                a = aa - bb + x
-                b = twoab + y
+                a = aa - bb + x;
+                b = twoab + y;
+            }
 
-                if (aa + bb > 16) return n;
+            return maxiterations;
+        }
+
+        function julia(x, y, maxiterations) {
+            let a = x;
+            let b = y;
+            let n = 0;
+
+            const ca = -0.871875;
+            const cb = 0.2333333333333334;
+
+            while (n++ < maxiterations) {
+                let aa = a * a;
+                let bb = b * b;
+
+                if (aa + bb > 8) return n;
+
+                let twoab = 2 * a * b;
+
+                a = aa - bb + ca;
+                b = twoab + cb;
             }
 
             return maxiterations;
