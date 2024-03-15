@@ -1,8 +1,11 @@
 import { Mesh, SimpleProgram } from './mesh';
-import { Vec3, Matrix4, Vec4 } from './types';
+import { Vec3, Vec4 } from './types';
 import { hcy } from '../../lib/color';
-import { deg, lengthUnder, rotate3d, substract, sum, vectorAngleQuaternion } from './transform';
+import { deg, lengthUnder, rotate3d, sum, vectorAngleQuaternion } from './transform';
 import { mul44v } from './matrix';
+
+import fragment from './shaders/fragment.glsl';
+import vertex from './shaders/vertex.glsl';
 
 const s3 = Math.sqrt(3);
 const s6 = Math.sqrt(6);
@@ -13,7 +16,7 @@ const rnd = (x: number): number => {
 
 export const makeCube = (gl: WebGLRenderingContext, pos: Vec3 = [0, 0, 0]): Mesh => {
 
-    const p = new SimpleProgram(gl, 'vertex', 'fragment');
+    const p = new SimpleProgram(gl, vertex, fragment);
 
     const geometry = makeCubeMesh(0, 0, 0, 5, 5, 5);
 
@@ -42,7 +45,7 @@ function quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3) {
 
 export const makeGrid = (gl: WebGLRenderingContext, center: Vec3, radius: number, d: number, color: [number, number, number]) => {
     const mesh = makeSimplexMesh([0, 0, 0], .7);
-    const p = new SimpleProgram(gl, 'vertex', 'fragment');
+    const p = new SimpleProgram(gl, vertex, fragment);
     const colors = new Float32Array(repeat(color, mesh.length));
     const res = []
     const sq34 = Math.sqrt(3 / 4);
@@ -112,7 +115,7 @@ export const makeDodecahedronMesh = (a: number) => {
 
 export const makeDodecahedrons = (gl: WebGLRenderingContext, a: number, cols: number, rows: number, layers: number, o: Vec3 = [0, 0, 0]) => {
     const mesh = makeDodecahedronMesh(a);
-    const p = new SimpleProgram(gl, 'vertex', 'fragment');
+    const p = new SimpleProgram(gl, vertex, fragment);
 
     const dy = s3 / 2;
     const dz = 2 * a / s6;

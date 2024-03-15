@@ -1,4 +1,4 @@
-import { Matrix3, Matrix4, Vec4 } from 'types';
+import { Matrix3, Matrix4, Vec4 } from './types';
 
 const iden3: Matrix3 = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 const iden4: Matrix4 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];

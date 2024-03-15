@@ -1,5 +1,5 @@
-import { Matrix4, Vec3, Vec4 } from 'types';
-import { mul44, mul44v } from 'matrix';
+import { Matrix4, Vec3, Vec4 } from './types';
+import { mul44, mul44v } from './matrix';
 
 export class Camera {
     constructor(
