@@ -100,6 +100,7 @@
             //   - lifetime stats - earnings, autosales, expenses, interest, clicks, manual/auto production, waste
             //   - live stats display
             //   - achievements 
+            //   - storage at capacty warning 
 
             const { useState, button, div, span } = Lightue;
             const pow = Math.pow;
@@ -113,7 +114,7 @@
             const graphs = {
                 util: graph('silver', 'widebars'),
                 waste: graph('purple', 'line'),
-                prod: graph('black', 'line', prodScale),
+                prod: graph('black', 'bars', prodScale),
                 clean: graph('magenta', 'line', prodScale),
                 inc: graph('#da9100 ', 'bars', incomeScale),
                 sell: graph('navy', 'event'),
@@ -132,7 +133,7 @@
 
             const state = useState({
                 inventory: 0,
-                balance: 1000,
+                balance: 50,
                 price: 1,
                 numAgents: 0,
                 agentLevel: 1,
@@ -143,7 +144,7 @@
                 autosellRate: 0,
                 autosellRateAgg: 0,
                 notes: [],
-                storage: 0,
+                storage: 1000,
                 storageLevel: 1,
                 waste: 0,
                 cleanup: 0,
@@ -252,13 +253,15 @@
 
             const agentCount = upgradable(dt => state.numAgents += dt, t => t, t => 15 * pow(t, 1.3), () => 'Add agent');
             const agentProdRate = upgradable(dt => state.agentLevelProd += dt, t => 10 + t * 1, t => 120 * pow(1.2, t), (_, next) => `Upgrade autoprodution rate to ${nice(next)}`);
-            const agentProdPeriod = upgradable(dt => state.agentLevelPeriod += dt, t => 500 + t * 10, t => 150 * pow(1.25, t), (_, next) => `Increase prod duration to ${nice(next / 1000)}s`);
-            const agentCooldownPeriod = upgradable(dt => state.agentLevelCooldown += dt, t => 5000 - t * 100, t => 200 * pow(1.3, t), (_, next) => `Decrease prod cooldown to ${nice(next / 1000)}s`);
+            const agentProdPeriod = upgradable(dt => state.agentLevelPeriod += dt, t => 500 + t * 10, t => 150 * pow(1.2, t), (_, next) => `Increase prod duration to ${nice(next / 1000)}s`);
 
-            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.3), (value, next) => `${nice(next)}%`);
+            const agentCooldownPeriod = upgradable(dt => state.agentLevelCooldown += dt, t => 5000 - t * 100, t => t < 50 ? 200 * pow(1.3, t) : Infinity, (_, next) => `Decrease prod cooldown to ${nice(next / 1000)}s`);
+
+            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.25), (value, next) => `${nice(next)}%`);
             const autosell = upgradable(dt => state.autosellLevel += dt, t => !!t * pow(10, t), t => !!t * 10 * pow(10, t) / 5, (value, next) => `${next}`);
-            const autosellRate = upgradable(dt => state.autosellRate += dt, t => 20 - t, t => t < 20 ? autosellRatePrice(t + 1) : 1e20, (value, next) => `${next} seconds`);
+            const autosellRate = upgradable(dt => state.autosellRate += dt, t => t < 20 ? 20 - t : 1 / (2 + t - 20), t => autosellRatePrice(t + 1), (_, next) => next >= 1 ? `${next} seconds` : `${(1 / next) | 0} times per second`);
             const storage = upgradable(dt => { if (dt > 0) state.storage += storageChange(state.storageLevel); return state.storageLevel += dt }, storageChange, t => storageChange(t - 1), (value, next) => `Add ${value} to storage capacity`);
+            const price = upgradable(dt => state.price += dt, t => Math.pow(1.025, t - 1), t => 10000 * (1 + (t - 1) / 2), (_, next) => `Marketing campain, increase price to ${nice(next)}`);
 
             const noteAutosell = note();
             const noteInterest = note();
@@ -273,7 +276,7 @@
                 if (state.inventory >= n) {
                     state.inventory -= n;
 
-                    let sale = n * state.price
+                    let sale = n * price.getValue();
                     state.balance += sale;
 
                     graphs.inc.spot += sale;
@@ -286,7 +289,7 @@
 
             function produce(n) {
                 let spare = state.storage - state.inventory;
-                let cleanup = spare > 0 ? Math.min(state.waste / 2, n / 3) : 0;
+                let cleanup = spare > 0 ? Math.min(state.waste / 2, 2 * n / 3) : 0;
                 let produced = Math.min(n - cleanup, spare);
                 let wasted = n - cleanup - produced;
 
@@ -329,10 +332,10 @@
                 if (state.autosellLevel > 0) {
                     if ((state.autosellRateAgg += delta / 1000) > autosellRate.getValue()) {
                         state.autosellRateAgg -= autosellRate.getValue();
-                        const sellAmount = autosell.getValue();
+                        const sellAmount = Math.max(state.inventory, autosell.getValue());
                         if (sell(sellAmount)) {
                             graphs.sell.spot = 1
-                            noteAutosell.show('Autosold ' + sellAmount + ' items');
+                            noteAutosell.show('Autosold ' + nice(sellAmount) + ' items for ' + nice(sellAmount * price.getValue()) + ' moneys');
                         }
                         else {
                             graphs.sell.spot = -1;
@@ -414,14 +417,17 @@
 
             let t = 0;
 
+            //addEventListener('wheel', e => { if (e.target.className == 'make-item') e.target.click() })
+
             Lightue({
                 balance: () => 'Balance: ' + nice(state.balance),
+                price: () => 'Price: ' + nice(price.getValue()),
                 inventory: () => 'In stock: ' + (state.inventory | 0) + ' / ' + state.storage,
                 wast: {
                     $$: () => `Waste: ${state.waste | 0}${nice(state.cleanup) ? `; ${nice(state.cleanup)} production goes towards cleanup` : ''}`,
                     $if: () => state.waste > 0
                 },
-                numAgents: () => 'Automakers: ' + state.numAgents + '@' + nice(agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())),
+                numAgents: () => 'Automakers: ' + nice(state.numAgents * agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())) + ' per second, ' + state.numAgents + '@' + nice(agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())),
                 intr: {
                     $$: () => 'Interest: ' + nice(interest.getValue()) + '%',
                     $if: () => state.interestLevel > 0
@@ -434,7 +440,7 @@
                             produce(state.manualRate);
                         }),
                     span({
-                        _style: 'padding-left: .5em',
+                        //_style: 'padding-left: .5em',
                         $if: () => state.manualProd > 0,
                         $$: () => nice(state.manualProd) + ' per second'
                     })
@@ -450,8 +456,10 @@
                     btn("Sell a million", () => sell(1000000), () => state.inventory >= 1000000, () => has('Sell 1M')),
                 ]),
 
-                man: upgrade('Increase manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
-                str: upgradeObj(storage),
+                man: div.group([
+                    upgrade('Increase manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
+                    upgradeObj(storage)
+                ]),
                 aut: div.group([
                     upgradeObj(agentCount),
                     upgradeObj(agentProdRate),
@@ -468,12 +476,15 @@
                     feat('Sell 1M', 7000000, () => has('Sell 10K'))
                 ]),
 
+                prc: upgradeObj(price),
                 int: div.line([() => `Interest ${nice(interest.getValue())}% `, upgradeObj(interest)]),
 
                 autosell: div.line([
                     () => `Autosell ${autosell.getValue()} `,
                     upgradeObj(autosell),
-                    () => `every ${autosellRate.getValue()} seconds`,
+                    () => autosellRate.getValue() >= 1 ? `every ${autosellRate.getValue()} seconds`
+                        : `${(1 / autosellRate.getValue()) | 0} times per second`,
+
                     upgradeObj(autosellRate),
                 ]),
 
@@ -560,20 +571,23 @@
                         state.balance -= getNextPrice();
                         onBuy();
                     },
-                    () => getNextPrice() <= state.balance);
+                    () => getNextPrice() <= state.balance,
+                    () => isFinite(getNextPrice()));
             }
 
             function btn(title, onclick, activeIf, showIf) {
+                const _disabled = () => !!activeIf && !activeIf()
                 return button({
                     $$: title,
                     $if: () => !showIf || showIf(),
+                    onwheel: () => { if (!_disabled()) { click(); onclick() } },
                     onclick: () => { click(); onclick() },
-                    _disabled: () => !!activeIf && !activeIf()
+                    _disabled
                 })
             }
 
             function round(price) {
-                return ((price / 10) | 0) * 10;
+                return isFinite(price) ? ((price / 10) | 0) * 10 : price;
             }
 
             function nice(value) {
