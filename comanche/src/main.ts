@@ -19,7 +19,6 @@ main();
 
 async function main() {
     [color, height] = await loadImages(maps[currentMap]);
-
     let loop = new Loop(1000 / 60, init, update, render);
     loop.start();
 }
@@ -30,8 +29,6 @@ function init(): WorldState {
     let player = {
         x: .11, y: .133, azimuth: -192.84802576606054, alt: 55.93534841801423
     }
-
-    //    player.alt = sample1d(height, player.x, player.y) + 10;
 
     let movement = {
         heading: new Inertial(10, 2, .1, 5),
@@ -166,7 +163,7 @@ function render(delta: number, state: WorldState) {
             let h = sample1d(height, px, py);
             let d = q * range;
 
-            let screenheight = 2000 * d * tan(vfov / 2 * deg) * 2
+            let screenheight = 1300 * d * tan(vfov / 2 * deg) * 2;
             let screenfloor = alt - screenheight / 2;
 
             let onscreensize = h < screenfloor ? 0 : h > screenfloor + screenheight ? 1 : (h - screenfloor) / screenheight;
@@ -189,15 +186,6 @@ function render(delta: number, state: WorldState) {
     }
 
     ctx.putImageData(renderTarget, viewport.ox, viewport.oy)
-    ctx.save()
-    ctx.translate(x * color.width, y * color.height);
-
-    ctx.strokeCircle(0, 0, 10);
-
-    ctx.rotate(azimuth * deg)
-    ctx.strokeRect(0, 0, 100, 0);
-
-    ctx.restore();
 }
 
 function mix(color: triplet, haze: triplet, ylevel: number, dist: number): triplet {
@@ -212,7 +200,7 @@ function sig(n: number) {
     return 1 / (1 + Math.exp(-n));
 }
 
-function sample1d(image: ImageData, x: number, y: number): number {
+function sample1d(image: Heightmap, x: number, y: number): number {
     let i = (image.height * wrap(y)) | 0;
     let j = (image.width * wrap(x)) | 0;
     let k = i * image.width + j
@@ -220,7 +208,7 @@ function sample1d(image: ImageData, x: number, y: number): number {
     return image.data[k];
 }
 
-function sample(image: ImageData, x: number, y: number): triplet {
+function sample(image: Heightmap, x: number, y: number): triplet {
     let i = (image.height * wrap(y)) | 0;
     let j = (image.width * wrap(x)) | 0;
     let k = (i * image.width + j) * 4;
