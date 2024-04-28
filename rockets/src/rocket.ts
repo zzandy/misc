@@ -4,12 +4,33 @@ import { Vector, newVector } from "./geometry";
 export class Rocket {
     private commandIndex: number = 0;
     private timer: number = 0;
-    private state: 'lead-in' | 'burn' | 'lead-out' = 'lead-in';
     pos: Vector;
-    burnVector: Vector = new Vector(0, 0);
-    vector: Vector = new Vector(0, 0);
+
+    public mainOn = true;
+    public leftOn = false;
+    public rightOn = false;
+
+    thrust = .03;
+    steer = .01;
+
+    heading: Vector = newVector(Math.PI / 2, 1);
+    vector = new Vector(0, 0);
     bestScore = 0;
     isDead = false;
+
+    public get thrustVector() {
+        return this.heading.times(this.thrust / this.heading.mag);
+    }
+
+    public get leftThrust() {
+        const left = new Vector(this.heading.y, - this.heading.x);
+        return left.times(this.steer / left.mag)
+    }
+
+    public get rightThrust() {
+        const left = new Vector(-this.heading.y, this.heading.x);
+        return left.times(this.steer / left.mag)
+    }
 
     constructor(x: number, y: number, private readonly gravity: Vector, public readonly commands: Command[]) {
         this.pos = new Vector(x, y);
@@ -21,60 +42,45 @@ export class Rocket {
 
     public advance(delta: number) {
         let time = delta;
-        let cmd = this.commands[this.commandIndex];
-        let burnVector = new Vector(0, 0);
-        let more = true;
 
-        while (more) {
-            more = false;
-            switch (this.state) {
-                case "lead-in":
-                    if (this.timer + time > cmd.leadTime) {
-                        time -= cmd.leadTime - this.timer;
-                        this.timer = 0;
-                        this.state = "burn";
-                        more = true;
-                    }
-                    else this.timer += time;
-                    break;
-                case "burn":
-                    if (this.timer + time > cmd.burnTime) {
-                        const x = cmd.burnTime - this.timer;
-                        burnVector = burnVector.add(cmd.vector.times(x / 1000));
-                        time -= x;
-                        this.timer = 0;
-                        this.state = "lead-out";
-                        more = true;
-                    }
-                    else {
-                        burnVector = burnVector.add(cmd.vector.times(time / 1000));
-                        this.timer += time;
-                    }
-                    break;
-                case "lead-out":
-                    if (this.timer + time > cmd.outTime) {
-                        time -= cmd.outTime - this.timer;
-                        this.timer = 0;
-                        this.commandIndex = (++this.commandIndex) % this.commands.length;
-                        cmd = this.commands[this.commandIndex];
-                        this.state = "lead-in";
-                        more = true;
-                    }
-                    else this.timer += time;
-                    break;
+        let burnVector = new Vector(0, 0);
+
+        while (time > 0) {
+            let cmd = this.commands[this.commandIndex];
+            if (this.timer > 0) {
+                const t = Math.min(this.timer, time);
+                this.timer -= t;
+                time -= t;
+
+                if (this.mainOn) burnVector = burnVector.add(this.thrustVector.times(t));
+
+                if (this.leftOn && !this.rightOn) {
+                    this.heading = this.heading.rotate(-this.steer * t);
+                }
+                if (this.rightOn && !this.leftOn) {
+                    this.heading = this.heading.rotate(this.steer * t);
+                }
+            }
+
+            if (time > 0) {
+                switch (cmd.thruster) {
+                    case 0: this.mainOn = !this.mainOn; break;
+                    case 1: this.leftOn = !this.leftOn; break;
+                    case 2: this.rightOn = !this.rightOn; break;
+                }
+
+                this.timer += cmd.outTime;
+                this.commandIndex = (++this.commandIndex) % this.commands.length;
             }
         }
-
-        this.burnVector = burnVector;
         this.vector = this.vector.add(burnVector).add(this.gravity.times(delta));
         this.pos = this.pos.add(this.vector);
     }
 }
 
 export class Command {
-    constructor(public readonly leadTime: number,
-        public readonly burnTime: number,
-        public readonly vector: Vector, public readonly outTime: number) { }
+    constructor(public readonly thruster: number,
+        public readonly outTime: number) { }
 }
 
 export class Explosion {
