@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" style="background-color: white;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Marbling</title>
+</head>
+
+<body>
+    <!-- color -->
+    <script type="text/javascript">
+
+        function hcy2rgb(h, c, y) {
+            // 601
+            const r = .3;
+            const g = .59;
+            const b = .11;
+
+            const h0 = h;
+            h /= 60;
+
+            const k = (1 - Math.abs((h % 2) - 1));
+
+            const K = h < 1 ? r + k * g
+                : h < 2 ? g + k * r
+                    : h < 3 ? g + k * b
+                        : h < 4 ? b + k * g
+                            : h < 5 ? b + k * r
+                                : r + k * b;
+
+            let cmax = 1;
+
+            if (y <= 0 || y >= 1) cmax = 0;
+            else cmax *= K < y ? (y - 1) / (K - 1) : K > y ? y / K : 1;
+            c = Math.min(c, cmax);
+
+            const x = c * k;
+            const rgb = h < 1 ? [c, x, 0]
+                : h < 2 ? [x, c, 0]
+                    : h < 3 ? [0, c, x]
+                        : h < 4 ? [0, x, c]
+                            : h < 5 ? [x, 0, c]
+                                : [c, 0, x];
+
+            const m = y - (r * rgb[0] + g * rgb[1] + b * rgb[2]);
+
+            const rgbdata = [rgb[0] + m, rgb[1] + m, rgb[2] + m];
+            return [(rgbdata[0] * 255) | 0, (rgbdata[1] * 255) | 0, (rgbdata[2] * 255) | 0];
+        }
+
+        function stringColor(tuple) {
+            return `rgb(${tuple[0]}, ${tuple[1]}, ${tuple[2]})`;
+        }
+
+    </script>
+
+    <script type="text/javascript">
+        function addCanvas(w, h, dontAdd) {
+            const canvas = document.createElement('canvas');
+
+            canvas.width = w;
+            canvas.height = h;
+
+            if (!dontAdd)
+                document.body.appendChild(canvas);
+
+            return canvas.getContext('2d', { alpha: false });
+        }
+
+        function loop(fps, init, update, render) {
+
+            let targetDelay = 1000 / fps;
+            let world = init();
+
+            let time = targetDelay + 1;
+
+            let doRender = true;
+
+            let then = performance.now();
+
+            requestAnimationFrame(frame);
+
+            function frame() {
+                let now = performance.now();
+                time += now - then;
+                then = now;
+
+                let numLoops = 0;
+
+                while (time > targetDelay) {
+                    time -= targetDelay;
+                    world = update(world);
+                    doRender = true;
+
+                    if (++numLoops > 50) {
+                        time = 0;
+                        break;
+                    }
+                }
+
+                if (doRender) {
+                    doRender = false;
+                    render(world);
+                }
+
+                requestAnimationFrame(frame);
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
+        const { sin, cos, sqrt, random } = Math;
+        const numDots = 200;
+        const tau = Math.PI * 2;
+
+        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#fff5eb', '#26547d', '#ef436b', '#ffce5c', '#05c793', '#ce5cff'];
+
+        class Vector {
+            #x = 0;
+            #y = 0;
+
+            constructor(x, y) {
+                this.#x = x;
+                this.#y = y;
+            }
+
+            get x() { return this.#x }
+            get y() { return this.#y }
+
+            add(other) {
+                return new Vector(this.#x + other.x, this.#y + other.y);
+            }
+
+            sub(other) {
+                return new Vector(this.#x - other.x, this.#y - other.y);
+            }
+
+            times(v) {
+                return new Vector(this.#x * v, this.#y * v);
+            }
+
+            get mag() {
+                return sqrt(this.#x * this.#x + this.#y * this.#y)
+            }
+        }
+
+        class LazyVector {
+            #actual
+            #current
+
+            constructor(start, vector) {
+                this.#actual = vector;
+                this.#current = start;
+            }
+
+            tick() {
+                this.#current = this.#current.times(5).add(this.#actual).times(1 / 6);
+            }
+
+            get value() { return this.#actual }
+            set value(v) { this.#actual = v }
+
+            get current() { return this.#current; }
+        }
+
+        class Spot {
+            constructor(x, y, r) {
+                this.dots = [];
+                this.color = rnd(colors);
+
+                for (let i = 0; i < numDots; ++i) {
+                    const a = tau * i / numDots;
+                    this.dots.push(new LazyVector(new Vector(x, y), new Vector(x + r * cos(a), y + r * sin(a))))
+                }
+            }
+
+            marble(x, y, r) {
+                const c = new Vector(x, y);
+                for (let i = 0; i < this.dots.length; ++i) {
+                    const pc = this.dots[i].value.sub(c);
+                    this.dots[i].value = c.add(pc.times(sqrt(1 + r * r / (pc.mag * pc.mag))))
+                }
+
+            }
+        }
+
+        loop(60, init, update, render);
+
+        function addSpot(x, y, r, spots) {
+            for (const spot of spots) {
+                spot.marble(x, y, r);
+            }
+
+            if (spots.push(new Spot(x, y, r)) > 100) spots.shift();
+        }
+
+        function init() {
+            const [w, h] = [window.innerWidth, window.innerHeight];
+            const ctx = addCanvas(w, h);
+
+            ctx.canvas.style.position = 'absolute';
+            ctx.canvas.style.top = '0';
+            ctx.canvas.style.left = '0';
+
+            ctx.imageSmoothingEnabled = true;
+
+            const spots = [];
+
+            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
+            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
+            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
+            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
+
+            ctx.canvas.addEventListener('click', e => {
+                addSpot(e.clientX, e.clientY, rnd(w / 20, w / 15), spots);
+            })
+
+            return {
+                ctx,
+                spots
+            };
+        }
+
+        function update(world) {
+            for (const spot of world.spots)
+                for (const dot of spot.dots)
+                    dot.tick();
+
+            return world;
+        }
+
+        function render(world) {
+            const { ctx, spots } = world;
+
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+            for (const spot of spots) {
+                ctx.beginPath();
+                ctx.moveTo(spot.dots[0].current.x, spot.dots[0].current.y);
+
+                for (let i = 1; i < spot.dots.length; ++i)
+                    ctx.lineTo(spot.dots[i].current.x, spot.dots[i].current.y);
+
+                ctx.closePath();
+                ctx.fillStyle = spot.color;
+                ctx.fill();
+            }
+        }
+
+        function rnd(a, b) {
+            if (a instanceof Array) return a[rnd(a.length) | 0];
+            if (b === undefined) return random() * a;
+            return a + (b - a) * random();
+        }
+    </script>
+</body>
+
+</html>
