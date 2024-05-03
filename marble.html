@@ -110,7 +110,7 @@
     </script>
 
     <script type="text/javascript">
-        const { sin, cos, sqrt, random } = Math;
+        const { sin, cos, sqrt, random, pow, abs } = Math;
         const numDots = 200;
         const tau = Math.PI * 2;
 
@@ -129,15 +129,19 @@
             get y() { return this.#y }
 
             add(other) {
-                return new Vector(this.#x + other.x, this.#y + other.y);
+                return new Vector(this.#x + other.#x, this.#y + other.#y);
             }
 
             sub(other) {
-                return new Vector(this.#x - other.x, this.#y - other.y);
+                return new Vector(this.#x - other.#x, this.#y - other.#y);
             }
 
             times(v) {
                 return new Vector(this.#x * v, this.#y * v);
+            }
+
+            dot(other) {
+                return this.#x * other.#x + this.#y * other.#y;
             }
 
             get mag() {
@@ -175,13 +179,52 @@
                 }
             }
 
+            tick() {
+
+                for (let i = 0; i < this.dots.length; ++i) {
+                    const dot = this.dots[i]
+                    if (i > 0) {
+                        const prev = this.dots[i - 1];
+                        const d = dot.value.sub(prev.value).mag;
+                        if (d > 10) {
+                            const start = dot.current.add(prev.current).times(1 / 2);
+                            const end = dot.value.add(prev.value).times(1 / 2);
+                            this.dots.splice(i, 0, new LazyVector(start, end));
+                        }
+
+                        if (d < 3) {
+                            this.dots.splice(i, 1);
+                            --i;
+                        }
+                    }
+
+                    this.dots[i].tick();
+                }
+
+
+
+            }
+
             marble(x, y, r) {
                 const c = new Vector(x, y);
                 for (let i = 0; i < this.dots.length; ++i) {
                     const pc = this.dots[i].value.sub(c);
                     this.dots[i].value = c.add(pc.times(sqrt(1 + r * r / (pc.mag * pc.mag))))
                 }
+            }
 
+            tine(o, v, d, w) {
+                if (v.mag < .000001) return;
+
+                const u = 1 / pow(2, 1 / w);
+                for (let i = 0; i < this.dots.length; ++i) {
+                    const po = this.dots[i].value.sub(o);
+                    let norm = new Vector(-v.y, v.x);
+                    norm = norm.times(1 / norm.mag);
+                    const disp = abs(po.dot(norm));
+                    const mag = d * pow(u, disp)
+                    this.dots[i].value = this.dots[i].value.add(v.times(mag))
+                }
             }
         }
 
@@ -212,9 +255,34 @@
             addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
             addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
 
+            let start = null;
+
             ctx.canvas.addEventListener('click', e => {
+                start = null;
                 addSpot(e.clientX, e.clientY, rnd(w / 20, w / 15), spots);
-            })
+            });
+
+            addEventListener('contextmenu', e => {
+                if (start !== null) {
+                    e.preventDefault();
+                    start = null;
+                }
+            });
+
+            ctx.canvas.addEventListener('mousemove', e => {
+                if (e.buttons == 2) {
+                    const next = new Vector(e.clientX, e.clientY);
+                    if (start != null) {
+                        let v = next.sub(start);
+
+                        const max = 50;
+                        if (v.mag > max) v = v.times(max / v.mag);
+
+                        for (const spot of spots) spot.tine(start, v, v.mag / 100, 10);
+                    }
+                    start = next;
+                }
+            });
 
             return {
                 ctx,
@@ -224,8 +292,7 @@
 
         function update(world) {
             for (const spot of world.spots)
-                for (const dot of spot.dots)
-                    dot.tick();
+                spot.tick();
 
             return world;
         }
