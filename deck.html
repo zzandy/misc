@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Deck</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'inline-block';
+
+            document.body.appendChild(can);
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script type="text/javascript">
+        const tau = Math.PI * 2;
+        const sin = Math.sin;
+        const cos = Math.cos;
+
+        const w = 100;
+        const h = 150;
+        const width = w * 2;
+        const height = h * 2;
+
+        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#ce5cff'];
+        const symbols = [heart(), cross(), coin(), star(), cup()];
+
+        let cards = [];
+
+        for (let color of colors) {
+            for (let symbol of symbols) {
+                for (let number = 1; number < 6; ++number) {
+                    cards.push([color, symbol, number])
+                }
+            }
+        }
+
+        shuffle(cards);
+
+        cards.forEach(render);
+
+        function render([color, shape, number]) {
+            let [_, ctx] = makeCanvas(width, height, true);
+            const p = w / 20;
+
+            ctx.beginPath();
+            ctx.moveTo(p * 3, p);
+            ctx.lineTo(width - p * 3, p);
+            ctx.quadraticCurveTo(width - p, p, width - p, p * 3);
+            ctx.lineTo(width - p, height - 3 * p);
+            ctx.quadraticCurveTo(width - p, height - p, width - 3 * p, height - p)
+            ctx.lineTo(3 * p, height - p)
+            ctx.quadraticCurveTo(p, height - p, p, height - 3 * p)
+            ctx.lineTo(p, 3 * p);
+            ctx.quadraticCurveTo(p, p, p * 3, p)
+
+            ctx.closePath();
+            ctx.clip();
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, width, height)
+
+            ctx.fillStyle = color;
+
+            ctx.translate(w, h);
+
+            if (number % 2) {
+                ctx.save();
+                ctx.scale(w / 3, w / 3)
+                ctx.fill(shape);
+                ctx.restore();
+            }
+
+            if (number > 3) {
+                const f = w / 2;
+                const g = 2 * h / 3;
+                for (let [x, y] of [[-f, -g], [-f, g], [f, -g], [f, g]]) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.scale(w / 3, w / 3)
+                    if (y > 0) ctx.rotate(tau / 2)
+                    ctx.fill(shape);
+                    ctx.restore();
+                }
+            }
+
+            if (number == 3) {
+                const g = 2 * h / 3;
+                for (let [x, y] of [[0, -g], [0, g]]) {
+                    ctx.save();
+                    ctx.translate(x, y);
+
+                    ctx.scale(w / 3, w / 3)
+                    if (y > 0) ctx.rotate(tau / 2)
+                    ctx.fill(shape);
+                    ctx.restore();
+                }
+            }
+
+
+            if (number == 2) {
+                const g = h / 2;
+                for (let [x, y] of [[0, -g], [0, g]]) {
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.scale(w / 3, w / 3)
+                    if (y > 0) ctx.rotate(tau / 2)
+                    ctx.fill(shape);
+                    ctx.restore();
+                }
+            }
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+
+        function heart() {
+            const ctx = new Path2D();
+            const s = .6;
+            const x = s / Math.sqrt(2);
+            const m = .05;
+
+            ctx.moveTo(x, m);
+            ctx.lineTo(0, m + x);
+            ctx.lineTo(0 - x, m);
+            ctx.arc(- x / 2, m - x / 2, s / 2, 3 * tau / 8, 7 * tau / 8);
+            ctx.arc(x / 2, m - x / 2, s / 2, 5 * tau / 8, tau / 8);
+
+            return ctx;
+        }
+
+        function cross() {
+            const ctx = new Path2D();
+
+            const w = .25;
+            const q = .5 - w;
+
+            ctx.moveTo(0, -w);
+            ctx.lineTo(q, -.5);
+            ctx.lineTo(.5, -q);
+            ctx.lineTo(w, 0);
+            ctx.lineTo(.5, q);
+            ctx.lineTo(q, .5);
+            ctx.lineTo(0, w);
+            ctx.lineTo(-q, .5);
+            ctx.lineTo(-.5, q);
+            ctx.lineTo(-w, 0);
+            ctx.lineTo(-.5, -q);
+            ctx.lineTo(-q, -.5);
+
+            return ctx;
+        }
+
+        function coin() {
+            const ctx = new Path2D();
+            const s = .25
+
+            ctx.arc(0, 0, .5, 0, tau);
+            ctx.moveTo(s, 0)
+            ctx.lineTo(0, -s)
+            ctx.lineTo(-s, 0)
+            ctx.lineTo(0, s)
+
+            return ctx;
+        }
+
+        function star() {
+            const ctx = new Path2D();
+            const r1 = .3;
+            const r2 = .55;
+
+            for (let i = 0; i < 5; ++i) {
+                let a2 = tau / 10 + tau / 5 * i;
+                let a1 = tau / 5 * i;
+                if (i == 0)
+                    ctx.moveTo(r1 * sin(a1), r1 * cos(a1));
+                else
+                    ctx.lineTo(r1 * sin(a1), r1 * cos(a1));
+                ctx.lineTo(r2 * sin(a2), r2 * cos(a2));
+            }
+
+            return ctx;
+        }
+
+        function cup() {
+            const ctx = new Path2D();
+            const f = .1;
+            const g = .3
+            ctx.moveTo(.5, -.5)
+            ctx.lineTo(-.5, -.5)
+            ctx.lineTo(-f, 0)
+            ctx.lineTo(-f, .5 - 1.5 * f);
+            ctx.lineTo(-g, .5 - 1.5 * f);
+            ctx.lineTo(-g, .5);
+            ctx.lineTo(g, .5);
+            ctx.lineTo(g, .5 - 1.5 * f);
+            ctx.lineTo(f, .5 - 1.5 * f);
+            ctx.lineTo(f, 0)
+
+            return ctx;
+        }
+    </script>
+</body>
+
+</html>
