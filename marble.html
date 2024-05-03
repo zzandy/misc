@@ -114,7 +114,7 @@
         const numDots = 200;
         const tau = Math.PI * 2;
 
-        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#fff5eb', '#26547d', '#ef436b', '#ffce5c', '#05c793', '#ce5cff'];
+        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#fff5eb', '#ce5cff'];
 
         class Vector {
             #x = 0;
@@ -186,13 +186,13 @@
                     if (i > 0) {
                         const prev = this.dots[i - 1];
                         const d = dot.value.sub(prev.value).mag;
-                        if (d > 10) {
+                        if (d > 15) {
                             const start = dot.current.add(prev.current).times(1 / 2);
                             const end = dot.value.add(prev.value).times(1 / 2);
                             this.dots.splice(i, 0, new LazyVector(start, end));
                         }
 
-                        if (d < 3) {
+                        if (d < 6) {
                             this.dots.splice(i, 1);
                             --i;
                         }
@@ -200,9 +200,6 @@
 
                     this.dots[i].tick();
                 }
-
-
-
             }
 
             marble(x, y, r) {
@@ -235,7 +232,7 @@
                 spot.marble(x, y, r);
             }
 
-            if (spots.push(new Spot(x, y, r)) > 100) spots.shift();
+            if (spots.push(new Spot(x, y, r)) > 80) spots.shift();
         }
 
         function init() {
@@ -250,10 +247,16 @@
 
             const spots = [];
 
-            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
-            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
-            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
-            addSpot(rnd(0, w), rnd(0, h), rnd(w / 20, w / 15), spots);
+            const r = w / colors.length / 2;
+            for (const color in colors) {
+
+
+
+                addSpot((1 + 2 * color) * r, h / 2, r, spots)
+                spots[color].color = colors[color]
+
+            }
+
 
             let start = null;
 
@@ -276,9 +279,26 @@
                         let v = next.sub(start);
 
                         const max = 50;
+                        if (v.mag < 0.00001) {
+                            start = next;
+                            return;
+                        }
                         if (v.mag > max) v = v.times(max / v.mag);
 
-                        for (const spot of spots) spot.tine(start, v, v.mag / 100, 10);
+                        for (const spot of spots) {
+                            spot.tine(start, v, v.mag / 100, 10);
+
+                            if (e.ctrlKey && v.mag > 0.00001) {
+                                let shift = new Vector(-v.y, v.x);
+                                shift = shift.times(w / 20 / shift.mag);
+                                spot.tine(start.add(shift), v, v.mag / 100, 10);
+                                spot.tine(start.add(shift.times(2)), v, v.mag / 100, 10);
+                                spot.tine(start.sub(shift), v, v.mag / 100, 10);
+                                spot.tine(start.sub(shift.times(2)), v, v.mag / 100, 10);
+                            }
+
+
+                        }
                     }
                     start = next;
                 }
