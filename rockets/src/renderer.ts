@@ -52,11 +52,40 @@ export class Renderer {
         // render exausts
         for (let rocket of rockets) {
             if (rocket.isDead) continue;
-            ctx.beginPath();
-            ctx.moveTo(rocket.pos.x, rocket.pos.y)
-            ctx.lineTo(rocket.pos.x - 70 * rocket.burnVector.x, rocket.pos.y - 70 * rocket.burnVector.y);
 
-            ctx.stroke();
+            //ctx.lineTo(rocket.pos.x - 70 * rocket.burnVector.x, rocket.pos.y - 70 * rocket.burnVector.y);
+
+            if (rocket.mainOn) {
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 8;
+                const v = rocket.thrustVector.times(300);
+                ctx.beginPath();
+                ctx.moveTo(rocket.pos.x, rocket.pos.y)
+                ctx.lineTo(rocket.pos.x - v.x, rocket.pos.y - v.y)
+                ctx.stroke();
+            }
+
+            if (rocket.leftOn && !rocket.rightOn) {
+                ctx.strokeStyle = 'red';
+                ctx.lineWidth = 5;
+
+                const v = rocket.leftThrust.times(2000);
+                ctx.beginPath();
+                ctx.moveTo(rocket.pos.x, rocket.pos.y)
+                ctx.lineTo(rocket.pos.x + v.x, rocket.pos.y + v.y)
+                ctx.stroke();
+            }
+
+            if (rocket.rightOn && !rocket.leftOn) {
+                ctx.strokeStyle = 'green';
+                ctx.lineWidth = 5;
+
+                const v = rocket.rightThrust.times(2000);
+                ctx.beginPath();
+                ctx.moveTo(rocket.pos.x, rocket.pos.y)
+                ctx.lineTo(rocket.pos.x + v.x, rocket.pos.y + v.y)
+                ctx.stroke();
+            }
         }
 
         ctx.fillStyle = '#E23636';
@@ -67,7 +96,7 @@ export class Renderer {
 
             ctx.save();
             ctx.translate(rocket.pos.x, rocket.pos.y);
-            ctx.rotate(Math.atan2(rocket.vector.y, rocket.vector.x) - Math.PI / 2)
+            ctx.rotate(Math.atan2(rocket.heading.y, rocket.heading.x) - Math.PI / 2)
             ctx.scale(2, 2)
             ctx.beginPath();
 
@@ -109,14 +138,8 @@ export class Renderer {
 
             let x = 0;
             for (let command of rocket.commands) {
-
-                x += command.leadTime;
-
-                let a = Math.atan2(command.vector.y, command.vector.x);
-                ctx.fillStyle = `hsl(${a * 180 / Math.PI}, 100%, 80%)`;
-                ctx.fillRect(x / s, y * line, command.burnTime / s, line - 1);
-
-                x += command.burnTime;
+                ctx.fillStyle = `hsl(${command.thruster * 120 / Math.PI}, 100%, 80%)`;
+                ctx.fillRect(x / s, y * line, 5, line - 1);
                 x += command.outTime;
             }
 
@@ -128,6 +151,7 @@ export class Renderer {
         this.ctx.fillStyle = 'grey';
         this.ctx.fillText(stats.first + 's', 0, y)
         this.ctx.fillText(stats.globalBest.toFixed(2) + 'pts % ' + (1 / stats.rate / 1000).toFixed(3) + "s/pt", 0, y + 20)
+        this.ctx.fillText(stats.best.toFixed(2) + 'pts', 0, y + 40)
 
         this.ctx.restore();
     }

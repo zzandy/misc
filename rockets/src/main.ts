@@ -1,8 +1,8 @@
 import { Loop } from '../../lib/loop';
 import { Renderer } from './renderer';
 import { rnd } from '../../lib/util';
-import { AABB, Vector, newVector } from './geometry';
-import { array, deg } from './util';
+import { AABB, Vector } from './geometry';
+import { array } from './util';
 import { Rocket, Command, Explosion } from './rocket';
 
 type State = {
@@ -37,8 +37,13 @@ let interval = 0;
 const maxInterval = 10;
 const g = .015;
 const d = 50;
+
 const loop = new Loop(1000 / 60, init, update, render);
 loop.start();
+
+function makeRocket(commands: Command[]) {
+    return new Rocket(0, 100, new Vector(0, -g), commands)
+}
 
 function init() {
     const renderer = new Renderer();
@@ -47,7 +52,7 @@ function init() {
 
     const area = new AABB(-w / 2, 0, w, h);
 
-    const rockets = array(n, _ => new Rocket(0, 100, new Vector(0, -g), array(rnd(minCommands, maxCommands), randomCommand)));
+    const rockets = array(n, _ => makeRocket(array(rnd(minCommands, maxCommands), randomCommand)));
 
     const obstacles = [
         new AABB(-w / 4, h * .4, w / 5, h / 20),
@@ -95,7 +100,7 @@ function update(delta: number, state: State) {
 
         const dist = state.goals.reduce((min, goal) => Math.min(min, goal.distance(rocket.pos)), Infinity);
         const won = dist < d;
-        const score = (dist / d + interval / 1000 / maxInterval) / (won ? 1 : 2);
+        const score = (5 * d/dist + interval / 1000 / maxInterval) / (won ? 1 : 20);
 
         rocket.score(score);
 
@@ -107,9 +112,7 @@ function update(delta: number, state: State) {
         state.best = Math.max(state.best, rocket.bestScore);
 
         if (state.globalBest < rocket.bestScore) {
-
             if (state.globalBest > 0) {
-
                 state.rate = (rocket.bestScore - state.globalBest) / (performance.now() - state.globalBest);
             }
             state.lastGlobalImp = performance.now()
@@ -155,7 +158,7 @@ function update(delta: number, state: State) {
             const cmds = splice(a.commands, b.commands);
 
             if (cmds.length >= minCommands && cmds.length < maxCommands)
-                state.rockets.push(new Rocket(0, 100, new Vector(0, -g), cmds));
+                state.rockets.push(makeRocket(cmds));
         }
     }
 
@@ -180,9 +183,8 @@ function splice(a: Command[], b: Command[]) {
 
     const res = a.slice(0, s0).concat(b.slice(t0, t1)).concat(a.slice(s1));
 
-    if (rnd() < .3) {
-
-        const mutation = rnd(['flip', 'drop', 'spawn']);
+    if (rnd() < .4) {
+        const mutation = rnd(['flip', 'drop', 'spawn', 'resize']);
         const at = rnd(res.length);
         switch (mutation) {
             case "flip":
@@ -194,20 +196,8 @@ function splice(a: Command[], b: Command[]) {
             case "spawn":
                 res.splice(at, 0, randomCommand());
                 break;
-            case 'burn':
-                res[at] = new Command(res[at].leadTime, res[at].burnTime * rnd(.9, 1.1), res[at].vector, res[at].outTime);
-                break;
-            case 'aim':
-                let m = res[at].vector.mag * rnd(.05, .2);
-                let v = newVector(rnd(360), m);
-                res[at] = new Command(res[at].leadTime, res[at].burnTime, new Vector(res[at].vector.x + v.x, res[at].vector.y + v.y), res[at].outTime);
-                break;
-            case 'force':
-                let k = rnd(.9, 1.1);
-                res[at] = new Command(res[at].leadTime, res[at].burnTime, new Vector(res[at].vector.x * k, res[at].vector.y * k), res[at].outTime);
-                break;
-            case 'out':
-                res[at] = new Command(res[at].leadTime, res[at].burnTime, res[at].vector, res[at].outTime * rnd(.9, 1.1));
+            case "resize":
+                res[at] = new Command(res[at].thruster, res[at].outTime * rnd(900, 1100) / 1000);
                 break;
         }
     }
@@ -216,8 +206,6 @@ function splice(a: Command[], b: Command[]) {
 }
 
 function randomCommand() {
-    return new Command(0,
-        rnd(minBurn, maxBurn),
-        newVector(rnd(180) * deg, rnd(minMag, maxMag)),
-        rnd(maxOut));
+    const thruster = rnd([0, 1, 2]);
+    return new Command(thruster, rnd(maxOut / (thruster == 0 ? 1 : 3)));
 }

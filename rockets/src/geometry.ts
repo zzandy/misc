@@ -33,6 +33,17 @@ export class Vector {
         const dy = other.y - this.y;
         return Math.sqrt(dx * dx + dy * dy);
     }
+
+    public rotate(rad:number){
+        const c = Math.cos(rad);
+        const s = Math.sin(rad);
+        const {x, y} = this;
+        
+        return new Vector(
+            x * c + y * -s,
+            x * s + y * c
+        );
+    }
 }
 
 export const newVector = (a: number, m: number) => {
