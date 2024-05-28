@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <title>Mandelbrot</title>
+    <title>Fractals</title>
 </head>
 
 <body>
@@ -266,7 +266,7 @@
                         undo();
                 }
                 else if (e.key == ' ') {
-                    mode = mode == 'mandelbrot' ? 'julia' : 'mandelbrot';
+                    mode = ++mode % modes.length;
                     resetRendering();
                 }
                 else if (inprogress && e.key == 'Shift') {
@@ -301,7 +301,8 @@
 
         let colorOffset = .7;
         let maxiterations = 200;
-        let mode = 'mandelbrot';
+        let mode = 0;
+        let modes = [mandlebrot, julia, ship];
 
         let maxScale = 5;
 
@@ -327,7 +328,7 @@
         const MAX_WORKERS = 60;
 
         for (let i = 0; i < MAX_WORKERS; ++i) {
-            workers.push(createWorker(worker, handlerWorkerResult, mandlebrot, julia, screenToViewPure));
+            workers.push(createWorker(worker, handlerWorkerResult, mandlebrot, julia, ship, screenToViewPure));
             freeWorkers.push(i);
         }
 
@@ -349,7 +350,7 @@
             let n = 0;
             let black = 0;
 
-            const fn = mode == 'julia' ? julia : mandlebrot;
+            const fn = mode == 0 ? mandlebrot : mode == 1 ? julia : ship;
 
             for (let vsample = 0; vsample < nvsamples; ++vsample) {
                 for (let hsample = 0; hsample < nhsamples; ++hsample) {
@@ -528,6 +529,22 @@
 
                 a = aa - bb + ca;
                 b = twoab + cb;
+            }
+
+            return maxiterations;
+        }
+
+        function ship(x, y, maxiterations) {
+            let zx = x;
+            let zy = y;
+            let n = 0;
+
+            while (n++ < maxiterations) {
+                let t = zx * zx - zy * zy + x;
+                zy = Math.abs(2 * zx * zy) + y;
+                zx = t;
+
+                if (zx * zx + zy * zy > 4) return n;
             }
 
             return maxiterations;
