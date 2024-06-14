@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" style="background-color: white;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Match 3</title>
+</head>
+
+<body>
+    <script name="color" type="text/javascript">
+
+        function hcy2rgb(h, c, y) {
+            // 601
+            const r = .3;
+            const g = .59;
+            const b = .11;
+
+            const h0 = h;
+            h /= 60;
+
+            const k = (1 - Math.abs((h % 2) - 1));
+
+            const K = h < 1 ? r + k * g
+                : h < 2 ? g + k * r
+                    : h < 3 ? g + k * b
+                        : h < 4 ? b + k * g
+                            : h < 5 ? b + k * r
+                                : r + k * b;
+
+            let cmax = 1;
+
+            if (y <= 0 || y >= 1) cmax = 0;
+            else cmax *= K < y ? (y - 1) / (K - 1) : K > y ? y / K : 1;
+            c = Math.min(c, cmax);
+
+            const x = c * k;
+            const rgb = h < 1 ? [c, x, 0]
+                : h < 2 ? [x, c, 0]
+                    : h < 3 ? [0, c, x]
+                        : h < 4 ? [0, x, c]
+                            : h < 5 ? [x, 0, c]
+                                : [c, 0, x];
+
+            const m = y - (r * rgb[0] + g * rgb[1] + b * rgb[2]);
+
+            const rgbdata = [rgb[0] + m, rgb[1] + m, rgb[2] + m];
+            return [(rgbdata[0] * 255) | 0, (rgbdata[1] * 255) | 0, (rgbdata[2] * 255) | 0];
+        }
+
+        function stringColor(tuple) {
+            return `rgb(${tuple[0]}, ${tuple[1]}, ${tuple[2]})`;
+        }
+
+    </script>
+
+    <script name="canvas" type="text/javascript">
+        function addCanvas(w, h) {
+            const canvas = document.createElement('canvas');
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            canvas.style.position = 'absolute';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+
+            document.body.appendChild(canvas);
+
+            return canvas.getContext('2d', { alpha: false });
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(fps, update, render) {
+
+            let targetDelay = 1000 / fps;
+
+            let time = targetDelay + 1;
+
+            let doRender = true;
+
+            let then = performance.now();
+
+            requestAnimationFrame(frame);
+
+            function frame() {
+                let now = performance.now();
+                time += now - then;
+                then = now;
+
+                let numLoops = 0;
+
+                while (time > targetDelay) {
+                    time -= targetDelay;
+                    update();
+                    doRender = true;
+
+                    if (++numLoops > 50) {
+                        console.log('overload')
+                        time = 0;
+                        break;
+                    }
+                }
+
+                if (doRender) {
+                    doRender = false;
+                    render();
+                }
+
+                requestAnimationFrame(frame);
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
+        const sq32 = Math.sqrt(3) / 2;
+        const colors = ["#009e73", "#0072b2", "#56b4e9", "#f0e442", "#e69f00", "#d55e00", "#cc79a7"];
+
+        const ctx = addCanvas();
+
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        const grid = [];
+        const size = 9;
+        const s = .9 * h / size;
+        const s2 = (size / 2 | 0);
+
+        for (let i = 0; i < size; ++i) {
+            const row = []
+            for (let j = 0; j < size; ++j) {
+                if (j - i > s2 || i - j > s2) row.push(null)
+                else {
+                    const [x, y] = transform((j - s2) * sq32, i - (j + s2) / 2);
+                    row.push({ i, j, x, y, value: rnd(colors), selected: false });
+                }
+            }
+            grid.push(row)
+        }
+
+        const strings = [...rows(), ...cols(), ...altRows()];
+
+        const cursor = { x: 0, y: 0, down: false }
+        addEventListener('mousemove', e => {
+            cursor.x = e.clientX;
+            cursor.y = e.clientY;
+        });
+        addEventListener('mouseleave', () => cursor.down = false);
+        let positionUpdated = true;
+        let saveSelected = false;
+        let selected = null;
+        addEventListener('mousedown', () => { cursor.down = true; saveSelected = true });
+        addEventListener('mouseup', () => { cursor.down = false; checkMove = true });
+
+        loop(60, update, render);
+
+        function update() {
+            let closest = null;
+            let shortest = Infinity
+            for (let row of grid) {
+                for (let cell of row) {
+                    if (cell == null) continue;
+                    cell.selected = false;
+                    const d = dist(cursor, cell);
+                    if (d < s && d < shortest) {
+                        shortest = d;
+                        closest = cell
+                    }
+                }
+            }
+
+            if (closest) {
+                closest.selected = true;
+                if (saveSelected) {
+                    selected = closest;
+                }
+            }
+
+            if (positionUpdated) {
+                positionUpdated = false;
+
+                let runs = [];
+
+                for (let string of strings) {
+
+                    let head = string[0];
+                    let run = [];
+
+                    for (let n = 1; n < string.length; ++n) {
+
+                        if (head.value == string[n].value) {
+                            if (run.length == 0) run.push(head);
+                            run.push(string[n]);
+                        }
+                        else {
+                            if (run.length > 2)
+                                runs.push(run)
+
+                            run = [];
+                        }
+
+                        head = string[n];
+                    }
+
+                    if (run.length > 2)
+                        runs.push(run)
+                }
+
+                const clusters = runs.map((run, i) => {
+                    run.cluster = { id: i, runs: [run] };
+                    return run.cluster;
+                });
+
+                // find overlapping runs
+                for (let a = 0; a < runs.length - 1; ++a) {
+                    for (b = a + 1; b < runs.length; ++b) {
+
+                        const ra = runs[a];
+                        const rb = runs[b]
+
+                        if (ra.some(({ i, j }) => rb.some(({ i: e, j: g }) => i == e && j == g))) {
+
+                            const ca = ra.cluster;
+                            const cb = rb.cluster;
+
+                            if (ca == cb) continue;
+
+                            cb.runs.forEach(run => run.cluster = ca)
+                            ca.runs.push(...cb.runs);
+                            delete cb.runs;
+                        }
+                    }
+                }
+
+                for (let run of runs) {
+                    for (let cell of run)
+                        cell.selected = true;
+                }
+
+                // prune ovelapping runs
+                runs = [];
+                for (let c of clusters.filter(c => c.runs)) {
+                    const run = [];
+                    run.id = c.id;
+                    for (let r of c.runs)
+                        for (let cell of r)
+                            if (!run.some(({ i, j }) => i == cell.i && j == cell.j))
+                                run.push(cell)
+
+
+                    runs.push(run)
+                }
+
+                for (let run of runs) {
+                    for (let cell of run)
+                        cell.exploding = run.id + 1;
+                }
+
+            }
+
+            saveSelected = false;
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, w, h)
+            for (let row of grid) {
+                for (let cell of row) {
+                    if (cell == null) continue;
+
+                    ctx.fillStyle = cell.value;
+                    ctx.beginPath();
+                    ctx.arc(cell.x, cell.y, s / 2, 0, 2 * Math.PI);
+                    ctx.closePath();
+                    ctx.fill();
+
+                    if (cell.selected) {
+                        ctx.strokeStyle = 'white';
+                        ctx.stroke();
+                    }
+
+                    if (cell.exploding) {
+
+                        let c = ((cell.exploding * 50) % 255).toString(16).padStart(2, '0');
+
+                        ctx.fillStyle = '#' + c + c + c;
+
+                        ctx.beginPath();
+                        ctx.arc(cell.x, cell.y, s / 5, 0, 2 * Math.PI);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                }
+            }
+
+            throw 'done'
+        }
+
+        function transform(x, y) {
+            return [x * s + w / 2, y * s + h / 2]
+        }
+
+        function dist(a, b) {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function rnd() {
+            switch (arguments.length) {
+                case 1:
+                    if (arguments[0] instanceof Array)
+                        return arguments[0][Math.floor(Math.random() * arguments[0].length)];
+                    else return (arguments[0] * Math.random()) | 0;
+                case 2:
+                    return (arguments[0] + Math.random() * (arguments[1] - arguments[0])) | 0;
+                case 0:
+                default:
+                    return Math.random();
+            }
+        }
+
+
+        function rows() {
+            const sets = []
+            for (let i = 0; i < size; ++i) {
+                const set = [];
+                for (let j = 0; j < size; ++j) {
+                    if (grid[i][j] !== null) set.push(grid[i][j]);
+                }
+                if (set.length)
+                    sets.push(set);
+            }
+
+            return sets;
+        }
+
+        function cols() {
+            const sets = []
+            for (let j = 0; j < size; ++j) {
+                const set = [];
+                for (let i = 0; i < size; ++i) {
+                    if (grid[i][j] !== null) set.push(grid[i][j]);
+                }
+                if (set.length)
+                    sets.push(set);
+            }
+
+            return sets;
+        }
+
+        function altRows() {
+            const sets = []
+            for (let i = 0; i < size; ++i) {
+                const set = [];
+                const set2 = [];
+                for (let j = 0, k = i; j < size; ++j, ++k) {
+                    if (k < size && grid[k][j] !== null) set.push(grid[k][j]);
+                    if (k != j && k < size && grid[j][k] !== null) set2.push(grid[j][k]);
+                }
+                if (set.length)
+                    sets.push(set);
+                if (set2.length)
+                    sets.push(set2);
+
+            }
+
+            return sets;
+        }
+    </script>
+</body>
+
+</html>
