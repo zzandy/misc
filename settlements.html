@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Settlements</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(fps, update, render) {
+
+            let then = performance.now();
+            let fixedDelta = 1000 / fps;
+            let acc = fixedDelta;
+
+            function tick() {
+                let now = performance.now();
+                acc += now - then;
+                then = now;
+
+                let doRender = false;
+                let retry = 20;
+                while (acc >= fixedDelta && retry-- > 0) {
+                    doRender = true;
+                    acc -= fixedDelta;
+                    update(fixedDelta);
+                }
+
+                if (acc > fixedDelta) {
+                    acc = fixedDelta;
+                }
+
+                if (doRender) {
+                    requestAnimationFrame(render)
+                }
+
+                setTimeout(tick, fixedDelta);
+            }
+
+            tick();
+        }
+
+    </script>
+
+    <script name="lib" type="text/javascript">
+        function rnd(n) {
+            return (Math.random() * n) | 0;
+        }
+
+        const maxLeafs = 3;
+        let latest = 0;
+        function quadTree(ox, oy, extent) {
+            let q1, q2, q3, q4
+            const leafs = [];
+            const e2 = extent / 2;
+
+            function addToChild(x, y, node) {
+                if (x < ox + e2 && y < oy + e2) q1.add(x, y, node);
+                if (x >= ox + e2 && y < oy + e2) q2.add(x, y, node);
+                if (x < ox + e2 && y >= oy + e2) q3.add(x, y, node);
+                if (x >= ox + e2 && y >= oy + e2) q4.add(x, y, node);
+            }
+
+            function add(x, y, node) {
+                if (x < ox || x > ox + extent || y < oy || y > oy + extent) return false;
+
+                if (q1 === undefined && leafs.length < maxLeafs) {
+                    leafs.push({ x, y, node });
+                }
+                else {
+                    if (q1 === undefined) {
+                        q1 = quadTree(ox, oy, e2)
+                        q2 = quadTree(ox + e2, oy, e2)
+                        q3 = quadTree(ox, oy + e2, e2)
+                        q4 = quadTree(ox + e2, oy + e2, e2)
+
+                        for (let { x, y, node } of leafs) {
+                            addToChild(x, y, node);
+                        }
+
+                        leafs.length = 0;
+                    }
+
+                    addToChild(x, y, node);
+                }
+            }
+
+            function get(x, y, w, h) {
+                if (x > ox + extent || x + w < ox || y > oy + extent || y + h < oy) return [];
+
+                if (q1 === undefined) {
+                    return leafs.filter(({ x: px, y: py }) => px >= x && px <= x + w && py >= y && py <= y + h);
+                }
+                else {
+                    return [...q1.get(x, y, w, h), ...q2.get(x, y, w, h), ...q3.get(x, y, w, h), ...q4.get(x, y, w, h)]
+                }
+            }
+
+            return {
+                x: ox, y: oy, extent, add, get
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
+        const tau = 2 * Math.PI;
+        const deg = tau / 360;
+        const rad = 1 / deg;
+        const sq32 = Math.sqrt(3) / 2;
+        const { random, sin, cos } = Math;
+
+        const ctx = fullscreenCanvas();
+        ctx.circle = function (x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, tau);
+            ctx.closePath();
+        }
+
+        ctx.line = function (x1, y1, x2, y2) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+        }
+
+        const { width, height } = ctx.canvas;
+
+        const R = width / 17;
+        const r = .8 * R;
+        const hazards = [];
+        const nodes = [];
+        const tree = quadTree(0, 0, width);
+
+        // make hazards
+        for (let i = 0; i < 10; ++i) {
+            const x = random() * width;
+            const y = random() * height;
+            const a = random() * tau;
+            const d = 2 * R + random() * R;
+            const dx = d * cos(a);
+            const dy = d * sin(a);
+            let t = 0;
+
+            while (t < 1) {
+                const q = t;
+                const haz = { x: x + q * dx, y: y + q * dy, r: R * sin((t * .6 + .2) * tau / 2) };
+                hazards.push(haz);
+                t += .1;
+            }
+        }
+
+        // generate nodes
+
+        const allNames = getNames();
+        const names = [];
+
+        for (let y = 0; y < height; y += 2 * R) {
+            let s = true;
+            x: for (let x = 0; x < width; x += 2 * R * sq32) {
+                s = !s;
+                const a = random() * tau;
+                const d = random() * r;
+
+                const dx = d * cos(a);
+                const dy = d * sin(a);
+
+                const ox = x + R, oy = y + R + (s || R);
+
+                if (ox + r > width || oy + r > height) continue;
+
+                for (const { x, y, r } of hazards) {
+                    if (dist(ox + dx, oy + dy, x, y) < r) continue x;
+                }
+
+                let name = '';
+                do {
+                    name = allNames[rnd(allNames.length)];
+                } while (names.includes(name));
+
+                const node = {
+                    ox, oy,
+                    x: ox + dx, y: oy + dy,
+                    name
+                };
+
+                nodes.push(node)
+
+                tree.add(ox + dx, oy + dy, node)
+            }
+        }
+
+        loop(1, update, render);
+
+        function update() {
+
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, width, height);
+
+            // ctx.strokeStyle = 'red';
+            // for (const { x, y, r } of hazards) {
+            //     ctx.circle(x, y, r);
+            //     ctx.stroke();
+            // }
+
+            ctx.fillStyle = 'grey';
+            ctx.strokeStyle = 'grey';
+
+            let fill = true;
+            let n = 64;
+
+            ctx.line(R - r - 3, 0, R - r - 3, height);
+            for (let x = R - r; x < width; x += 2 * R) {
+                ctx.line(x, 0, x, height);
+                ctx.fillText(String.fromCharCode(++n), x + R, R - r - 8)
+
+                if (fill) {
+                    ctx.fillRect(x, R - r - 3, 2 * R, 3)
+                }
+
+                fill = !fill;
+            }
+
+            n = 0
+            fill = false
+            ctx.line(0, R - r - 3, width, R - r - 3);
+            for (let y = R - r; y < height; y += 2 * R) {
+                ctx.line(0, y, width, y);
+
+                ctx.fillText(++n, R - r - 12, y + R)
+
+                if (fill) {
+                    ctx.fillRect(R - r - 3, y, 3, 2 * R);
+                }
+
+                fill = !fill;
+            }
+
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'white';
+            for (const { ox, oy, x, y, name } of nodes) {
+                // ctx.circle(ox, oy, R);
+                // ctx.stroke();
+                // ctx.circle(ox, oy, r);
+                // ctx.stroke();
+                ctx.circle(x, y, r / 20);
+                ctx.fill();
+
+                ctx.fillText(name, (x + r / 20) | 0, (y - r / 20) | 0)
+            }
+        }
+
+        function dist(x1, y1, x2, y2) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            return Math.sqrt(dx * dx + dy * dy)
+        }
+
+        function getNames() {
+            return 'Abardok Abbes Abbou Abdelkrim Abdullah Abu Acharim Ad-dees Adam Adaouda Aday Addiss Adebour Adghers Adh Adiri Adjir Admer Adrar Afassa Afi Afra Agadir Agdz Agnana Agoudim Agrd Aguedal Aguinane Aiach Ain Aissa Aissi Ait Ajran Akabli Akhlouf Akka Al-jandal Al-jazil Alaqqad Alghurfa Ali Alkhamra Alkhbayn Alnif Alougoum Alqaria Alrudood Alsowm Alwahd Amadagh Amazraou Amazzer Amd Amder Amelkis Ammar Amor Amourah Amrane Amsra Amtoudi Anag Anamr Aney Annamer Antar Anzeglouf Aoufous Aougrout Aoujeft Aoukadede Aoukerda Aoulef Araf Arbaouat Arhlad Arlit Aserghine Ash Ash-sharqia Assa Atar Atlas-saghir Atta Awbari Awf Awjilah Azekkour Azoua Azougui Azraga Azreg Badriane Baghdada Bagzan Bahariya Bahla Bald Baloul Bani Baniane Baris Batin Bdh Bdsh Bekri Ben Benaceur Bendhahoua Beni Berriane Bidbid Bidiyah Bilad Bilma Bin Biskra Blaghema Blal Blidet Bmzon Borelle Bou Bouanane Bouda Boudenib Bouffaddi Bouizakarne Boukais Boukhzama Bounoura Bour Boussemghoun Brahim Brak Branis Brezina Budah Buhassan Bulaydah Buwat Buzaymah Chair Charouine Chebika Chebla Cheik Cheri Chinguetti Chouater Crescent Dabah Dabalia Daghara Daglet Dahla Dakhlet Dallah Damm Daqiq Daris Dasl Debaga Debagh Debbab Debila Dendane Derj Dguache Dha Dhahur Dhank Dhayet Dif Dirkou Djado Djamaa Djanet Djedida Djelal Djemorah Doucen Douira Douirat Douz Dujal Dumat Dunhuang Eddarein Edriss Edwalgue Eglieg Ehel Ein Einat Emalawle Enefis Entitam Entkemkemt Erfoud Errachidia Essifa Ezzaouia Fachi Falaj Fanja Farafra Faraoun Farfar Fasah Fatis Fayyum Fenoughil Ferkane Fezna Figuig Finnt Foggaret Foum Gaberoun Gabès Gafait Gafsa Ganga Gara Gedi Germa Ghadames Ghar Ghardaia Gharib Ghassira Ghat Ghayl Ghidma Ghilane Ghilouf Ghizlane Ghoufi Ghouta Ghzâl Goulmima Gromedh Guemar Guentour Guerou Guidimouni Haddou Haha Haid Hailain Halahil Halfun Halit Hallouf Hamam Hamid Hammad Hammane Hammou Hannabou Haqab Harat Harim Hassani Hassi Hassilabied Haul Hawl Hawqayn Hayjar Henni Herbil Hibra Hilm Hisn Howtat Hssou Hubat Huwaibah Hyad Ibouday Ibra Ibri Icht Ida Iferouane Ifrane Ighane Ighir-igiouaz Ighmir Ighrem Igli Igmir Igostene Igoudmane Iherir Ihjjamen Ihrzer Ikhlef Illizi Illou Imitek Imti Ingall Inraren Intliten Irbibene Irhels Iriji Isfalem Isguen Isilf Ismene Issa Istal Izki Jahi Jahiz Jakharrah Jalan Jalu Jamnah Kahanat Kale Kalouf Kamour Kankossa Kanut Kebili Kerzaz Kettana Khab Khaborah Khadra Khafdi Khaibar Khaled Khalid Khalifa Khan Kharma Khatu Khelil Khenguet Khirane Khoudir Khubaytah Kiriwt Kitnah Kobenni Kounta Ksabi Ksar Kufra Kurkur Lagraire Lagrouba Lahad Lahmer Lake Lamkatra Larocu Lestane Lhadouane Libya Lioua Liwa Lizerg Lizq M Maaden Magrane Mahdah Mahidia Mahmeddah Mahmoud Manah Manal Mansour Maqabil Maqniyat Maqta Maradah Mareth Masah Masmoudi Masram Mazzer Medina Medinah Meggarine Mehlah Mekhadma Meriem Messaad Metarfa Metlili Metouia Mezguida Mhaireth Midès Mih Minqar Miskin Miss Mogayra Moghrar Moghtar Mrabet Munjarid Murzuq Muskaysa N Naam Nadji Naftah Najran Nakhal Naqsi Nasrate Nass Naâma Nba Negrine Nejam Nema Nida Nizwa Nkob Nouail Noun Ntakat Nukhaylah Nuway Okba Omar Otmane Ouabelli Ouadane Ouadjda Oualata Ouansa Ouargla Ouarzazate Oudref Oufla Oufrane Oulad Ouled Oum Oumache Ozayem Qaidun Qara Qarn Qasr Qatrun Qirdan Qishn Qurayyah Rabi Rabyanah Rached Rachid Radhouan Raffa Rahme Rajmi Ramlia Reggane Reguiba Rgabi Rhamianou Rissani Ruqqah Rustaq Sabha Sabria Sabt Sahli Said Sajae Salah Salalah Saleh Sali Salifi Samail Saman Sana Saoun Saroor Sayma Sayq Sayt Sebaa Seguedine Seiyun Semdjane Semghane Semouta Senan Shajwa Shakshuk Shibam Shibika Shuh Sidi Sif Sijilmasa Sinaw Sini Siwa Siya Skoura Slimane Sohis Sokna Souk Steftimi Still Subalkh Sunaybah Tabalah Tabelbala Tabelkoza Tabelot Tabou Tadara Tadighoust Tafounante Tagabada Tagant Taghit Taghjijt Taghouzi Taghzoute Tagueldimt Taguenzalt Tahtani Taibet Taibine Tainzert Taizent Tajarhi Takazanza Takoumit Talamzit Talat Talmest Taltfraout Tamadanine Tamanhint Tamanrt Tamaqzah Tamegroute Tamellalt Tamentit Tamerza Tamest Tamezmoute Tamim Tamkasselt Tamnougalt Tamssoulte Tanouchert Tansikht Tanuf Taoudaate Taouennza Taoujafet Taribah Tarim Tarmigt Tasfaout Tassawant Tassissat Tastifte Tata Tataouine Taulabah Tawaz Tawrirt Taya Tayma Tazarine Tazirbu Tazougart Tchirozerine Tegadit Tegant Telmine Temacine Temassekht Temerna Tendla Tentane Terjit Thala Tichitt Tidjikja Tifelfal Tiggane Tigherghar Tighit Tighmert Tiglit Tiguissalt Tikchtat Tilouine Timia Timiderte Timimoun Timinite Timleha Timmassekh Timoudi Timoulay Tindjellet Tinejdad Tinfoula Tinghir Tinighil Tinzouline Tiouliline Tiourinine Tiout Tirebane Tisenasamine Tissergate Tissint Tisslit Titaf Tizgaghine Tizgui Tkoutt Tlalet Tolga Tool Torchane Toueizikt Touggourt Toughza Toundoute Toungat Touroug Toyour Tozeur Tsabit Ulyah Umar Uyun Waddan Wadi Wanzarik Warflan Wasit Wazir Wusad Yabrin Yahia Yakhtul Yamin Yanqul Yiqa Youssef Yuwan Zaglou Zagora Zaouia Zaouiet Zawit Zaymi Zelfana Zella Zguid Zouiya Zouli'.split(' ');
+        }
+    </script>
+</body>
+
+</html>
