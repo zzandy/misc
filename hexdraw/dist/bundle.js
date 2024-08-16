@@ -227,7 +227,7 @@ System.register("lib/loop", [], function (exports_3, context_3) {
 });
 System.register("lib/canvas", [], function (exports_4, context_4) {
     "use strict";
-    var getCanvas, fullscreenCanvas3d;
+    var getCanvas, fullscreenCanvas3d, sq32;
     var __moduleName = context_4 && context_4.id;
     function fullscreenCanvas(relative, noAlpha) {
         if (relative === void 0) { relative = false; }
@@ -263,6 +263,20 @@ System.register("lib/canvas", [], function (exports_4, context_4) {
             ctx.fill();
             return ctx;
         };
+        ctx.fillHex = function (x, y, r) {
+            ctx.beginPath();
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.moveTo(r / sq32, 0);
+            for (var i = 0; i < 5; ++i) {
+                ctx.rotate(Math.PI / 3);
+                ctx.lineTo(r / sq32, 0);
+            }
+            ctx.restore();
+            ctx.closePath();
+            ctx.fill();
+            return ctx;
+        };
         document.body.style.overflow = 'hidden';
         document.body.appendChild(can);
         return ctx;
@@ -292,6 +306,7 @@ System.register("lib/canvas", [], function (exports_4, context_4) {
                 document.body.appendChild(can);
                 return gl;
             });
+            sq32 = Math.sqrt(3) / 2;
         }
     };
 });
@@ -326,52 +341,57 @@ System.register("hexdraw/src/sprite-renderer", [], function (exports_6, context_
     return {
         setters: [],
         execute: function () {
-            stencil = (""
-                + ". . . . . . . ^ ^ ^ ^ . . . . . . . . . . . . .\n"
-                + ". . . . . . ^ ^ ^ ^ ^ # # # # T T . . . . . . .\n"
-                + ". . . . . ^ ^ # # # # # # # # # T T T T . . . .\n"
-                + ". . . . # # # # # # # # # # # # # T T T . . . .\n"
-                + ". . . # # # # # # # # # # # # # # # # T T . . .\n"
-                + ". . < # # # # # # # # # # # # # # # # # T . . .\n"
-                + ". < < # # # # # # # # # # # # # # # # # # . . .\n"
-                + "< < < # # # # # # # # # # # # # # # # # # # . .\n"
-                + "< < # # # # # # # # # # # # # # # # # # # # . .\n"
-                + ". < # # # # # # # # # # # # # # # # # # # # > .\n"
-                + ". < # # # # # # # # # # # # # # # # # # # # > .\n"
-                + ". < # # # # # # # # # # # # # # # # # # # # > .\n"
-                + ". . # # # # # # # # # # # # # # # # # # # # > >\n"
-                + ". . # # # # # # # # # # # # # # # # # # # > > >\n"
-                + ". . . # # # # # # # # # # # # # # # # # # > > .\n"
-                + ". . . L # # # # # # # # # # # # # # # # # > . .\n"
-                + ". . . L L # # # # # # # # # # # # # # # # . . .\n"
-                + ". . . . L L L # # # # # # # # # # # # # . . . .\n"
-                + ". . . . L L L L # # # # # # # # # v v . . . . .\n"
-                + ". . . . . . . L L # # # # v v v v v . . . . . .\n"
-                + ". . . . . . . . . . . . . v v v v . . . . . . .")
-                .split('\n')
-                .map(function (row) { return row.split(' ').map(function (c) {
-                switch (c) {
-                    case '#':
-                        return 7;
-                    case '^':
-                        return 1;
-                    case 'T':
-                        return 2;
-                    case '>':
-                        return 3;
-                    case 'v':
-                        return 4;
-                    case 'L':
-                        return 5;
-                    case '<':
-                        return 6;
-                    default:
-                        return 0;
-                }
-            }); });
+            stencil = ("" +
+                ". . . . . . . ^ ^ ^ ^ . . . . . . . . . . . . .\n" +
+                ". . . . . . ^ ^ ^ ^ ^ # # # # 7 7 . . . . . . .\n" +
+                ". . . . . ^ ^ # # # # # # # # # 7 7 7 7 . . . .\n" +
+                ". . . . # # # # # # # # # # # # # 7 7 7 . . . .\n" +
+                ". . . # # # # # # # # # # # # # # # # 7 7 . . .\n" +
+                ". . < # # # # # # # # # # # # # # # # # 7 . . .\n" +
+                ". < < # # # # # # # # # # # # # # # # # # . . .\n" +
+                "< < < # # # # # # # # # # # # # # # # # # # . .\n" +
+                "< < # # # # # # # # # # # # # # # # # # # # . .\n" +
+                ". < # # # # # # # # # # # # # # # # # # # # > .\n" +
+                ". < # # # # # # # # # # # # # # # # # # # # > .\n" +
+                ". < # # # # # # # # # # # # # # # # # # # # > .\n" +
+                ". . # # # # # # # # # # # # # # # # # # # # > >\n" +
+                ". . # # # # # # # # # # # # # # # # # # # > > >\n" +
+                ". . . # # # # # # # # # # # # # # # # # # > > .\n" +
+                ". . . L # # # # # # # # # # # # # # # # # > . .\n" +
+                ". . . L L # # # # # # # # # # # # # # # # . . .\n" +
+                ". . . . L L L # # # # # # # # # # # # # . . . .\n" +
+                ". . . . L L L L # # # # # # # # # v v . . . . .\n" +
+                ". . . . . . . L L # # # # v v v v v . . . . . .\n" +
+                ". . . . . . . . . . . . . v v v v . . . . . . .")
+                .split("\n")
+                .map(function (row) {
+                return row.split(" ").map(function (c) {
+                    switch (c) {
+                        case "#":
+                            return 7;
+                        case "^":
+                            return 1;
+                        case "7":
+                            return 2;
+                        case ">":
+                            return 3;
+                        case "v":
+                            return 4;
+                        case "L":
+                            return 5;
+                        case "<":
+                            return 6;
+                        default:
+                            return 0;
+                    }
+                });
+            });
             h = 21;
             w = 24;
-            exports_6("getHexPos", getHexPos = function (i, j) { return [j * 20 - i * 4 - ((j / 2) | 0) * 4, i * 19 - (j % 2) * 5 + ((j / 2) | 0) * 9]; });
+            exports_6("getHexPos", getHexPos = function (i, j) { return [
+                j * 20 - i * 4 - ((j / 2) | 0) * 4,
+                i * 19 - (j % 2) * 5 + ((j / 2) | 0) * 9,
+            ]; });
             Scaler = (function () {
                 function Scaler(data, sx, sy) {
                     this.data = data;
@@ -401,10 +421,10 @@ System.register("hexdraw/src/sprite-renderer", [], function (exports_6, context_
                 }
                 SpriteRenderer.prototype.render = function (coreValue, colorFn, adj) {
                     var _a = this, sx = _a.sx, sy = _a.sy;
-                    var can = document.createElement('canvas');
+                    var can = document.createElement("canvas");
                     can.width = w * sx;
                     can.height = h * sx;
-                    var ctx = (can).getContext('2d');
+                    var ctx = can.getContext("2d");
                     var id = ctx.createImageData(w * sx, h * sy);
                     var scaler = new Scaler(id.data, sx, sy);
                     for (var i = 0; i < h; ++i) {
@@ -416,6 +436,7 @@ System.register("hexdraw/src/sprite-renderer", [], function (exports_6, context_
                             scaler.put(i, j, color);
                         }
                     }
+                    scaler.put(((w / 2) | 0) - 2, ((h / 2) | 0) + 1, colorFn(3));
                     ctx.putImageData(id, 0, 0);
                     return can;
                 };
@@ -424,14 +445,21 @@ System.register("hexdraw/src/sprite-renderer", [], function (exports_6, context_
             exports_6("SpriteRenderer", SpriteRenderer);
             max = Math.max;
             min = Math.min;
-            med = function (a, b, c) { return a > b ? b > c ? b : a > c ? c : a : a > c ? a : b > c ? c : b; };
+            med = function (a, b, c) { return (a > b ? (b > c ? b : a > c ? c : a) : a > c ? a : b > c ? c : b); };
             getCornerColor = function (f, v, n) {
-                return f === 1 ? med(v, n[0], n[5])
-                    : f === 2 ? med(v, n[0], n[1])
-                        : f === 3 ? med(v, n[1], n[2])
-                            : f === 4 ? med(v, n[2], n[3])
-                                : f === 5 ? med(v, n[3], n[4])
-                                    : f === 6 ? med(v, n[4], n[5]) : 0;
+                return f === 1
+                    ? med(v, n[0], n[5])
+                    : f === 2
+                        ? med(v, n[0], n[1])
+                        : f === 3
+                            ? med(v, n[1], n[2])
+                            : f === 4
+                                ? med(v, n[2], n[3])
+                                : f === 5
+                                    ? med(v, n[3], n[4])
+                                    : f === 6
+                                        ? med(v, n[4], n[5])
+                                        : 0;
             };
         }
     };

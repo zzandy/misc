@@ -8,59 +8,64 @@ export type adjarray = [number, number, number, number, number, number];
          3           */
 export type adjindex = 0 | 1 | 2 | 3 | 4 | 5;
 
-const stencil = (""
-    + ". . . . . . . ^ ^ ^ ^ . . . . . . . . . . . . .\n"
-    + ". . . . . . ^ ^ ^ ^ ^ # # # # T T . . . . . . .\n"
-    + ". . . . . ^ ^ # # # # # # # # # T T T T . . . .\n"
-    + ". . . . # # # # # # # # # # # # # T T T . . . .\n"
-    + ". . . # # # # # # # # # # # # # # # # T T . . .\n"
-    + ". . < # # # # # # # # # # # # # # # # # T . . .\n"
-    + ". < < # # # # # # # # # # # # # # # # # # . . .\n"
-    + "< < < # # # # # # # # # # # # # # # # # # # . .\n"
-    + "< < # # # # # # # # # # # # # # # # # # # # . .\n"
-    + ". < # # # # # # # # # # # # # # # # # # # # > .\n"
-    + ". < # # # # # # # # # # # # # # # # # # # # > .\n"
-    + ". < # # # # # # # # # # # # # # # # # # # # > .\n"
-    + ". . # # # # # # # # # # # # # # # # # # # # > >\n"
-    + ". . # # # # # # # # # # # # # # # # # # # > > >\n"
-    + ". . . # # # # # # # # # # # # # # # # # # > > .\n"
-    + ". . . L # # # # # # # # # # # # # # # # # > . .\n"
-    + ". . . L L # # # # # # # # # # # # # # # # . . .\n"
-    + ". . . . L L L # # # # # # # # # # # # # . . . .\n"
-    + ". . . . L L L L # # # # # # # # # v v . . . . .\n"
-    + ". . . . . . . L L # # # # v v v v v . . . . . .\n"
-    + ". . . . . . . . . . . . . v v v v . . . . . . .")
-    .split('\n')
-    .map(row => row.split(' ').map(c => {
-        switch (c) {
-            case '#':
-                return 7;
-            case '^':
-                return 1;
-            case 'T':
-                return 2;
-            case '>':
-                return 3;
-            case 'v':
-                return 4;
-            case 'L':
-                return 5;
-            case '<':
-                return 6;
-            default:
-                return 0;
-        }
-    }));
+const stencil = (
+    "" +
+    ". . . . . . . ^ ^ ^ ^ . . . . . . . . . . . . .\n" +
+    ". . . . . . ^ ^ ^ ^ ^ # # # # 7 7 . . . . . . .\n" +
+    ". . . . . ^ ^ # # # # # # # # # 7 7 7 7 . . . .\n" +
+    ". . . . # # # # # # # # # # # # # 7 7 7 . . . .\n" +
+    ". . . # # # # # # # # # # # # # # # # 7 7 . . .\n" +
+    ". . < # # # # # # # # # # # # # # # # # 7 . . .\n" +
+    ". < < # # # # # # # # # # # # # # # # # # . . .\n" +
+    "< < < # # # # # # # # # # # # # # # # # # # . .\n" +
+    "< < # # # # # # # # # # # # # # # # # # # # . .\n" +
+    ". < # # # # # # # # # # # # # # # # # # # # > .\n" +
+    ". < # # # # # # # # # # # # # # # # # # # # > .\n" +
+    ". < # # # # # # # # # # # # # # # # # # # # > .\n" +
+    ". . # # # # # # # # # # # # # # # # # # # # > >\n" +
+    ". . # # # # # # # # # # # # # # # # # # # > > >\n" +
+    ". . . # # # # # # # # # # # # # # # # # # > > .\n" +
+    ". . . L # # # # # # # # # # # # # # # # # > . .\n" +
+    ". . . L L # # # # # # # # # # # # # # # # . . .\n" +
+    ". . . . L L L # # # # # # # # # # # # # . . . .\n" +
+    ". . . . L L L L # # # # # # # # # v v . . . . .\n" +
+    ". . . . . . . L L # # # # v v v v v . . . . . .\n" +
+    ". . . . . . . . . . . . . v v v v . . . . . . ."
+)
+    .split("\n")
+    .map((row) =>
+        row.split(" ").map((c) => {
+            switch (c) {
+                case "#":
+                    return 7;
+                case "^":
+                    return 1;
+                case "7":
+                    return 2;
+                case ">":
+                    return 3;
+                case "v":
+                    return 4;
+                case "L":
+                    return 5;
+                case "<":
+                    return 6;
+                default:
+                    return 0;
+            }
+        })
+    );
 
 const h = 21; //stencil.length;
 const w = 24; //stencil[0].length;
 
-export const getHexPos = (i: number, j: number) => [j * 20 - i * 4 - ((j / 2) | 0) * 4, i * 19 - (j % 2) * 5 + ((j / 2) | 0) * 9];
+export const getHexPos = (i: number, j: number) => [
+    j * 20 - i * 4 - ((j / 2) | 0) * 4,
+    i * 19 - (j % 2) * 5 + ((j / 2) | 0) * 9,
+];
 
 class Scaler {
-    constructor(private readonly data: Uint8ClampedArray, private readonly sx: number, private readonly sy: number) {
-
-    }
+    constructor(private readonly data: Uint8ClampedArray, private readonly sx: number, private readonly sy: number) {}
 
     public put(i: number, j: number, col: color) {
         const data = this.data;
@@ -81,16 +86,14 @@ class Scaler {
 }
 
 export class SpriteRenderer {
-
-    constructor(private readonly sx: number, private readonly sy: number) { }
+    constructor(private readonly sx: number, private readonly sy: number) {}
 
     public render(coreValue: number, colorFn: (value: number) => color, adj: adjarray): HTMLCanvasElement {
-
         const { sx, sy } = this;
-        const can = <HTMLCanvasElement>document.createElement('canvas');
+        const can = <HTMLCanvasElement>document.createElement("canvas");
         can.width = w * sx;
         can.height = h * sx;
-        const ctx = <CanvasRenderingContext2D>(can).getContext('2d');
+        const ctx = <CanvasRenderingContext2D>can.getContext("2d");
 
         const id = ctx.createImageData(w * sx, h * sy);
         const scaler = new Scaler(id.data, sx, sy);
@@ -106,6 +109,7 @@ export class SpriteRenderer {
             }
         }
 
+        scaler.put(((w / 2) | 0) - 2, ((h / 2) | 0) + 1, colorFn(3));
         ctx.putImageData(id, 0, 0);
         return can;
     }
@@ -113,14 +117,20 @@ export class SpriteRenderer {
 
 const max = Math.max;
 const min = Math.min;
-const med = (a: number, b: number, c: number) => a > b ? b > c ? b : a > c ? c : a : a > c ? a : b > c ? c : b;
+const med = (a: number, b: number, c: number) => (a > b ? (b > c ? b : a > c ? c : a) : a > c ? a : b > c ? c : b);
 
 const getCornerColor = (f: number, v: number, n: adjarray) => {
-    return f === 1 ? med(v, n[0], n[5])
-        : f === 2 ? med(v, n[0], n[1])
-            : f === 3 ? med(v, n[1], n[2])
-                : f === 4 ? med(v, n[2], n[3])
-                    : f === 5 ? med(v, n[3], n[4])
-                        : f === 6 ? med(v, n[4], n[5]) : 0;
-}
-
+    return f === 1
+        ? med(v, n[0], n[5])
+        : f === 2
+        ? med(v, n[0], n[1])
+        : f === 3
+        ? med(v, n[1], n[2])
+        : f === 4
+        ? med(v, n[2], n[3])
+        : f === 5
+        ? med(v, n[3], n[4])
+        : f === 6
+        ? med(v, n[4], n[5])
+        : 0;
+};
