@@ -1,0 +1,248 @@
+<html>
+
+<head>
+    <title>Dice</title>
+    <style type="text/css">
+        :root {
+            --dice-size: 100px;
+            --size: calc(1.45 * var(--dice-size));
+            --side: calc(var(--dice-size)/2.01);
+            --in-side: calc(.98*var(--side));
+
+            --dot-col: rgb(3, 13, 0);
+            --face-col: oklch(93.52% 0.0723 79.41);
+
+            --dot-line: calc(var(--side) /1.7);
+
+            --dice-size-neg: calc(-1 * calc(var(--dice-size)));
+            --dot-line-neg: calc(-1 * var(--dot-line));
+            --side-neg: calc(-1 * var(--side));
+            --in-side-neg: calc(-1 * var(--in-side));
+        }
+
+        body {
+            background: #003c0e;
+        }
+
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+        }
+
+        .die {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: var(--size);
+            height: var(--size);
+        }
+
+        .sides {
+            width: var(--dice-size);
+            height: var(--dice-size);
+            position: relative;
+            transform-style: preserve-3d;
+            transition: 300ms;
+
+            &,
+            .one & {
+                transform: rotate3d(1, 0, 0, 25deg) rotate3d(0, 0, 1, -45deg)
+            }
+
+            .two & {
+                transform: rotate3d(1, 0, 0, 25deg) rotate3d(0, 0, 1, 135deg) rotate3d(0, 1, 0, .25turn)
+            }
+
+            .three & {
+                transform: rotate3d(1, 0, 0, 25deg) rotate3d(0, 0, 1, -45deg) rotate3d(1, 0, 0, .25turn)
+            }
+
+            .four & {
+                transform: rotate3d(1, 0, 0, 25deg) rotate3d(0, 0, 1, -45deg) rotate3d(1, 0, 0, .75turn)
+            }
+
+            .five & {
+                transform: rotate3d(1, 0, 0, 25deg) rotate3d(0, 0, 1, 45deg) rotate3d(0, 1, 0, .75turn)
+            }
+
+            .six & {
+                transform: rotate3d(1, 0, 0, 25deg) rotate3d(0, 0, 1, -45deg) rotate3d(0, 1, 0, .5turn)
+            }
+        }
+
+        .side {
+            width: 99%;
+            height: 99%;
+            background: radial-gradient(var(--face-col), oklch(from var(--face-col) calc(l*.97) calc(c*1.1) h), oklch(from var(--face-col) calc(l*.94) calc(c*1.7) h));
+            position: absolute;
+            display: flex;
+            border-radius: 15%;
+            align-items: center;
+            justify-content: center;
+
+            &.b {
+                background: oklch(from var(--face-col) calc(l*.95) calc(c*1.5) h);
+
+                &:before {
+                    display: none;
+                }
+            }
+
+            &:before {
+                content: '';
+                width: 25%;
+                height: 25%;
+                background: var(--dot-col);
+                border-radius: 100%;
+            }
+
+            &.one {
+                transform: translateZ(var(--side));
+
+                &.b {
+                    transform: translateZ(var(--in-side));
+                }
+            }
+
+            &.two {
+                transform: translateX(var(--side-neg)) rotateY(-90deg);
+
+
+                &.b {
+                    transform: translateX(var(--in-side-neg)) rotateY(-90deg);
+                }
+
+                &:before {
+                    background: transparent;
+                    box-shadow: var(--dot-col) var(--dot-line-neg) var(--dot-line-neg) 0px 0px, var(--dot-col) var(--dot-line) var(--dot-line) 0px 0px;
+                }
+            }
+
+            &.three {
+                transform: translateY(var(--side)) rotateX(90deg);
+
+                &.b {
+                    transform: translateY(var(--in-side)) rotateX(90deg);
+                }
+
+                &:before {
+                    box-shadow: var(--dot-col) var(--dot-line-neg) var(--dot-line) 0px 0px, var(--dot-col) var(--dot-line) var(--dot-line-neg) 0px 0px;
+                }
+            }
+
+            &.four {
+                transform: translateY(var(--side-neg)) rotateX(90deg);
+
+                &.b {
+                    transform: translateY(var(--in-side-neg)) rotateX(90deg);
+                }
+
+                &:before {
+                    background: transparent;
+                    box-shadow: var(--dot-col) var(--dot-line-neg) var(--dot-line) 0px 0px, var(--dot-col) var(--dot-line-neg) var(--dot-line-neg) 0px 0px,
+                        var(--dot-col) var(--dot-line) var(--dot-line) 0px 0px, var(--dot-col) var(--dot-line) var(--dot-line-neg) 0px 0px;
+                }
+            }
+
+            &.five {
+                transform: translateX(var(--side)) rotateY(90deg);
+
+                &.b {
+                    transform: translateX(var(--in-side)) rotateY(90deg);
+                }
+
+                &:before {
+                    box-shadow: var(--dot-col) var(--dot-line-neg) var(--dot-line-neg) 0px 0px, var(--dot-col) var(--dot-line-neg) var(--dot-line) 0px 0px,
+                        var(--dot-col) var(--dot-line) var(--dot-line-neg) 0px 0px, var(--dot-col) var(--dot-line) var(--dot-line) 0px 0px;
+                }
+            }
+
+            &.six {
+                transform: translateZ(var(--side-neg));
+
+                &.b {
+                    transform: translateZ(var(--in-side-neg));
+                }
+
+                &:before {
+                    background: transparent;
+                    box-shadow: var(--dot-col) var(--dot-line-neg) var(--dot-line-neg) 0px 0px, var(--dot-col) var(--dot-line-neg) 0px 0px 0px,
+                        var(--dot-col) var(--dot-line-neg) var(--dot-line) 0px 0px, var(--dot-col) var(--dot-line) var(--dot-line-neg) 0px 0px, var(--dot-col) var(--dot-line) 0px 0px 0px, var(--dot-col) var(--dot-line) var(--dot-line) 0px 0px;
+                }
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <script type="text/javascript">
+        addEventListener('load', () => {
+
+            const classes = ['one', 'two', 'three', 'four', 'five', 'six']
+
+            for (const die of document.getElementsByClassName('die')) {
+
+                const dice = document.createElement('div')
+                dice.className = 'sides';
+
+                for (let c of classes) {
+                    const side = document.createElement('div');
+                    side.className = `side ${c}`;
+
+                    const sideb = document.createElement('div');
+                    sideb.className = `side ${c} b`;
+
+                    dice.appendChild(side)
+                    dice.appendChild(sideb)
+                }
+
+                die.appendChild(dice)
+            }
+
+
+            setInterval(() => document.getElementsByClassName('die')[rnd(6)].className = 'die ' + classes[rnd(6)], 1000)
+
+
+        });
+
+
+        function rnd(n) {
+            return n * Math.random() | 0;
+        }
+
+
+    </script>
+
+    <div class="container">
+
+        <div class="die one">
+
+        </div>
+
+        <div class="die two">
+
+        </div>
+
+        <div class="die three">
+
+        </div>
+
+        <div class="die four">
+
+        </div>
+
+        <div class="die five">
+
+        </div>
+
+        <div class="die six">
+
+        </div>
+
+
+    </div>
+
+</body>
+
+</html>
