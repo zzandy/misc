@@ -226,22 +226,33 @@ System.register("misc/src/huff", [], function (exports_4, context_4) {
         makeUI();
     }
     exports_4("main", main);
+    function $(name, attrs, content) {
+        var e = document.createElement(name);
+        if (attrs != null)
+            for (var _i = 0, _a = Object.entries(attrs); _i < _a.length; _i++) {
+                var _b = _a[_i], key = _b[0], value = _b[1];
+                e.setAttribute(key, value);
+            }
+        if (content != null && content instanceof Node)
+            e.appendChild(content);
+        else if (content != null && content instanceof Array)
+            content.forEach(function (x) { return e.appendChild(x); });
+        else if (content != null)
+            e.innerText = content;
+        return e;
+    }
     function makeUI() {
-        var input = document.createElement('textarea');
-        input.setAttribute('cols', '45');
-        input.setAttribute('rows', '15');
-        var output = document.createElement('div');
-        input.addEventListener('keyup', function () { return render(calc(input.value), output); });
-        var form = document.createElement('div');
-        form.appendChild(input);
-        form.appendChild(output);
-        input.value = 'disjfh alksdhfjlaskjdchfn alseukifycpqwnoeiur[cpoif;sdlkgfdkgjdksfjg;dlfkjgcvmp[oeirutcpmoigudfs;lkgjmdfs;glkjsmcd;fgisdfg;lkmsjcdf;lkgj]]';
+        var input = $("textarea", { cols: 45, rows: 15 });
+        var output = $("div", {});
+        input.addEventListener("keyup", function () { return render(calc(input.value), output); });
+        var form = $("div", {}, [input, output]);
+        input.value = "To steal ideas from one person is plagiarism; to steal from many is research.";
         render(calc(input.value), output);
         document.body.appendChild(form);
     }
     function calc(text) {
         var freqs = {};
-        for (var _i = 0, _a = text.split(''); _i < _a.length; _i++) {
+        for (var _i = 0, _a = text.split(""); _i < _a.length; _i++) {
             var char = _a[_i];
             if (!(char in freqs))
                 freqs[char] = 1;
@@ -250,26 +261,38 @@ System.register("misc/src/huff", [], function (exports_4, context_4) {
         }
         var a = [];
         for (var char in freqs) {
-            a.push([freqs[char], char]);
+            a.push({ count: freqs[char], node: { value: char, freq: freqs[char] / text.length } });
         }
         if (a.length > 1)
             do {
-                a.sort(function (a, b) { return a[0] - b[0]; });
-                a.splice(0, 2, [a[0][0] + a[1][0], { right: a[0][1], left: a[1][1] }]);
+                a.sort(function (a, b) { return a.count - b.count; });
+                a.splice(0, 2, { count: a[0].count + a[1].count, node: { left: a[0].node, right: a[1].node } });
             } while (a.length > 1);
-        var res = { tree: a[0][1] };
+        var res = { tree: a[0].node };
         return res;
     }
     function render(huff, output) {
-        output.innerHTML = renderNode(huff.tree, '')[1];
+        var acc = [];
+        renderNode(acc, huff.tree, "");
+        acc.sort(function (_a, _b) {
+            var a = _a[0];
+            var b = _b[0];
+            return (a.length == b.length ? a.localeCompare(b) : a.length - b.length);
+        });
+        output.innerHTML = "<div class=\"out\">" + acc
+            .map(function (_a) {
+            var prefix = _a[0], character = _a[1], freq = _a[2];
+            return "<div>" + prefix + "</div><div>" + character + "</div><div>" + (freq * 100).toFixed(2) + "%</div>";
+        })
+            .join("") + "</div>";
     }
-    function renderNode(node, prefix) {
-        if (typeof (node) == 'string')
-            return [1, "<div class=\"leaf\">".concat(prefix, " ").concat(node == ' ' ? '_' : node, "</div>")];
-        var left = renderNode(node.left, prefix + '0');
-        var right = renderNode(node.right, prefix + '1');
-        var total = left[0] + right[0];
-        return [total, "\n        <div class=\"node\">\n            <div class=\"bracing\">\n            <div><span class=\"prefix\">".concat(prefix, "</span></div>\n                <div class=\"brace\" style=\"min-height: 50%; min-width: .5em\"></div>\n            </div>\n            <div class=\"split\">\n                ").concat(left[1]).concat(right[1], "\n            </div>\n        </div>\n        ")];
+    function renderNode(acc, node, prefix) {
+        if ("value" in node) {
+            acc.push([prefix, node.value == " " ? "_" : node.value, node.freq]);
+            return;
+        }
+        renderNode(acc, node.left, prefix + "0");
+        renderNode(acc, node.right, prefix + "1");
     }
     return {
         setters: [],
@@ -760,9 +783,9 @@ System.register("misc/src/sort", [], function (exports_9, context_9) {
     }
     exports_9("main", main);
     function merge(a, from, to) {
-        var _a;
         if (from === void 0) { from = 0; }
         if (to === void 0) { to = -1; }
+        var _a;
         if (to == -1)
             to = a.length - 1;
         if (to == from)
@@ -827,7 +850,7 @@ System.register("misc/src/sort", [], function (exports_9, context_9) {
         var b = new Uint32Array(a);
         var ms = time(function () { return sort(b); });
         console.log(b);
-        console.log("".concat(isSorted(b) ? 'OK  ' : 'FAIL', " ").concat(ms, "ms ").concat(title));
+        console.log((isSorted(b) ? 'OK  ' : 'FAIL') + " " + ms + "ms " + title);
     }
     function isSorted(a) {
         for (var i = 1; i < a.length; ++i) {

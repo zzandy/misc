@@ -3,70 +3,84 @@ export function main() {
 }
 
 type codes = { tree: node };
-type node = string | { left: node, right: node };
+
+type leaf = { value: string; freq: number };
+
+type node = leaf | { left: node | leaf; right: node | leaf };
+
+function $<K extends keyof HTMLElementTagNameMap>(
+    name: K,
+    attrs?: Record<string, any>,
+    content?: string | Node | Node[]
+): HTMLElementTagNameMap[K] {
+    const e = document.createElement(name);
+
+    if (attrs != null)
+        for (const [key, value] of Object.entries(attrs)) {
+            e.setAttribute(key, value);
+        }
+
+    if (content != null && content instanceof Node) e.appendChild(content);
+    else if (content != null && content instanceof Array) content.forEach((x) => e.appendChild(x));
+    else if (content != null) e.innerText = content;
+
+    return e;
+}
 
 function makeUI() {
-    let input = document.createElement('textarea');
-    input.setAttribute('cols', '45');
-    input.setAttribute('rows', '15');
+    let input = $("textarea", { cols: 45, rows: 15 });
+    let output = $("div", {});
 
-    let output = document.createElement('div');
+    input.addEventListener("keyup", () => render(calc(input.value), output));
 
-    input.addEventListener('keyup', () => render(calc(input.value), output))
+    let form = $("div", {}, [input, output]);
 
-    let form = document.createElement('div');
-    form.appendChild(input);
-    form.appendChild(output);
-
-    input.value = 'disjfh alksdhfjlaskjdchfn alseukifycpqwnoeiur[cpoif;sdlkgfdkgjdksfjg;dlfkjgcvmp[oeirutcpmoigudfs;lkgjmdfs;glkjsmcd;fgisdfg;lkmsjcdf;lkgj]]'
-    render(calc(input.value), output)
+    input.value = "To steal ideas from one person is plagiarism; to steal from many is research.";
+    render(calc(input.value), output);
     document.body.appendChild(form);
 }
 
 function calc(text: string): codes {
     let freqs: { [key: string]: number } = {};
-    for (let char of text.split('')) {
+
+    for (let char of text.split("")) {
         if (!(char in freqs)) freqs[char] = 1;
         else freqs[char]++;
     }
 
-    let a: [number, node][] = [];
+    let a: { count: number; node: node }[] = [];
     for (let char in freqs) {
-        a.push([freqs[char], char])
+        a.push({ count: freqs[char], node: { value: char, freq: freqs[char] / text.length } });
     }
 
     if (a.length > 1)
         do {
-            a.sort((a, b) => a[0] - b[0])
-            a.splice(0, 2, [a[0][0] + a[1][0], { right: a[0][1], left: a[1][1] }]);
+            a.sort((a, b) => a.count - b.count);
+            a.splice(0, 2, { count: a[0].count + a[1].count, node: { left: a[0].node, right: a[1].node } });
         } while (a.length > 1);
 
-    let res = { tree: a[0][1] };
+    let res = { tree: a[0].node };
     return res;
 }
 
 function render(huff: codes, output: HTMLDivElement) {
-    output.innerHTML = renderNode(huff.tree, '')[1];
+    const acc: [string, string, number][] = [];
+    renderNode(acc, huff.tree, "");
+    acc.sort(([a], [b]) => (a.length == b.length ? a.localeCompare(b) : a.length - b.length));
+    output.innerHTML = `<div class="out">${acc
+        .map(
+            ([prefix, character, freq]) =>
+                `<div>${prefix}</div><div>${character}</div><div>${(freq * 100).toFixed(2)}%</div>`
+        )
+        .join("")}</div>`;
 }
 
-function renderNode(node: node, prefix: string): [number, string] {
-    if (typeof (node) == 'string')
-        return [1, `<div class="leaf">${prefix} ${node == ' ' ? '_' : node}</div>`];
+function renderNode(acc: [string, string, number][], node: node, prefix: string): void {
+    if ("value" in node) {
+        acc.push([prefix, node.value == " " ? "_" : node.value, node.freq]);
+        return;
+    }
 
-    let left = renderNode(node.left, prefix + '0');
-    let right = renderNode(node.right, prefix + '1');
-
-    let total = left[0] + right[0];
-
-    return [total, `
-        <div class="node">
-            <div class="bracing">
-            <div><span class="prefix">${prefix}</span></div>
-                <div class="brace" style="min-height: 50%; min-width: .5em"></div>
-            </div>
-            <div class="split">
-                ${left[1]}${right[1]}
-            </div>
-        </div>
-        `];
+    renderNode(acc, node.left, prefix + "0");
+    renderNode(acc, node.right, prefix + "1");
 }

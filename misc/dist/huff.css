@@ -1,29 +1,13 @@
-html,
-body,
-textarea {
-    background-color: #003109;
-    color: white;
+.out {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    column-gap: .5em;
 }
 
-textarea {
-    border: 1px inset rgba(120, 120, 120, .54)
+.out div {
+    opacity: .7;
 }
 
-.node {
-    display: flex;
-    align-items: stretch;
-}
-
-.bracing {
-    display: flex;
-    align-items: center;
-}
-
-.prefix {
-    vertical-align: middle;
-}
-
-.brace {
-    border: 1px solid white;
-    border-width: 1px 0 1px 1px;
+.out div:nth-child(3n+2) {
+    opacity: 1;
 }
