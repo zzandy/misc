@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Rot N</title>
+    <style>
+        .content {
+            max-width: 50rem;
+            margin: auto;
+
+            font-size: 150%;
+            text-align: center;
+        }
+
+        .content textarea {
+            font-size: 150%;
+            width: 100%;
+            height: 4em;
+        }
+
+        .content input {
+            width: 100%;
+        }
+
+        .content .out {
+            font-size: 150%;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="content">
+        <textarea id="input"></textarea>
+        <br />
+        <input id="shift" type="range" value="13" min="-26" max="26" />
+        <div id="output">13</div>
+        <div id="out"></div>
+    </div>
+    <script type="text/javascript">
+        const slider = document.getElementById('shift');
+        const value = document.getElementById('output');
+        const text = document.getElementById('input');
+        const output = document.getElementById('out');
+
+        updateShift();
+        slider.addEventListener('input', updateShift);
+        text.addEventListener('keypress', updateText);
+
+        function updateShift() {
+            value.innerHTML = slider.value;
+
+            updateText();
+        }
+
+        function updateText() {
+            const shift = -slider.value;
+            const input = text.value;
+
+            output.innerHTML = input
+                .toLowerCase()
+                .split('')
+                .map(x => x == ' '
+                    ? ' '
+                    : String.fromCharCode(97 + (2 * 26 + x.charCodeAt(0) - 97 + shift) % 26)).join('')
+        }
+    </script>
+</body>
+
+</html>
