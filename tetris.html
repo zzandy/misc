@@ -173,7 +173,8 @@
                 paused: false,
                 shadowEnabled: true,
                 score: 0,
-                rotateCw: true
+                rotateCw: true,
+                holdRestart: 2000
             };
         }
 
@@ -181,8 +182,8 @@
             let { bag, figs, width, height, dropDelta, pos, input, current, field, color, gameOver, figure, rotation } = world;
 
             if (gameOver) {
-                if (input.includes(DROP)) {
-                    input.length = 0;
+                world.holdRestart -= delta;
+                if (world.holdRestart <= 0 && input.includes(DROP)) {
                     world.gameOver = false;
                     world.score = 0;
                     world.bag = [];
@@ -196,6 +197,8 @@
                     world.figuresDrawn = 0;
                     world.dropDelta = getDropDelta(0);
                 }
+
+                input.length = 0;
 
                 return world;
             }
@@ -251,6 +254,7 @@
 
                 if (!isValid(world.next[rotation], pos, field, width, height)) {
                     world.gameOver = true;
+                    world.holdRestart = 2000;
                     savescore(world.score, world.level);
                     return world;
                 }
@@ -369,7 +373,7 @@
 
         function render(world) {
 
-            let { ctx, pos, current, next, width, height, palette, color, nextColor, field, shadowdepth, paused, shadowEnabled, rotateCw, gameOver } = world;
+            let { ctx, pos, current, next, width, height, palette, color, nextColor, field, shadowdepth, paused, shadowEnabled, rotateCw, gameOver, holdRestart } = world;
 
             const uiColor = '#777';
             const uiHighlight = '#ccc';
@@ -377,7 +381,7 @@
             ctx.fillStyle = '#212025';
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-            const scale = 24;
+            const scale = 32;
 
             const sx = width * scale + figSize * scale + scale;
             const sy = height * scale;
@@ -430,14 +434,16 @@
             const ox = (width + .2) * scale + 3;
             const oy = (figSize + .4) * scale + 3;
 
-            font(12, uiColor);
-            ctx.fillText('Next:', ox, 10);
+            let fontSize = scale / 2;
+            font(fontSize, uiColor);
+            ctx.fillText('Next:', ox, fontSize);
             ctx.fillText('Score:', ox, oy);
-            ctx.fillText('Level:', ox, oy + 50);
+            ctx.fillText('Level:', ox, oy + fontSize * 5);
 
-            font(30, uiHighlight);
-            ctx.fillText(world.score, ox, oy + 30);
-            ctx.fillText(world.level, ox, oy + 80);
+            fontSize = (scale * 1.2) | 0;
+            font(fontSize, uiHighlight);
+            ctx.fillText(world.score, ox, oy + fontSize);
+            ctx.fillText(world.level, ox, oy + 3 * fontSize);
 
             // draw help;
             ctx.font = '12px system-ui';
@@ -486,8 +492,10 @@
                 ctx.font = '64px system-ui';
                 text(ctx, "Game Over", 3, oy, 1, 2);
 
-                ctx.font = '12px system-ui';
-                text(ctx, 'space to restart', 130, oy + 16, .5, 1);
+                if (holdRestart <= 0) {
+                    ctx.font = '12px system-ui';
+                    text(ctx, 'space to restart', 130, oy + 16, .5, 1);
+                }
 
                 const scores = JSON.parse(localStorage.getItem('scores') || '[]');
 
@@ -500,7 +508,7 @@
 
                 let w = ctx.measureText(scores[0][0]).width;
 
-                ctx.fillStyle = 'rgba(0,0,0,.5)';
+                ctx.fillStyle = 'rgba(0,0,0,.8)';
                 ctx.fillRect(sx / 2 - w, oy + 35, w * 2, 17 * (scores.length + 1));
 
                 ctx.fillStyle = '#ffffff';
@@ -654,7 +662,7 @@
 
         function score(level, rows) {
             const k = Math.pow(1.2, level)
-            return (5 * (3 * rows - 1) * k) | 0;
+            return rows ? (5 * (3 * rows - 1) * k) | 0 : 0;
         }
     </script>
 </body>
