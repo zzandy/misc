@@ -315,14 +315,14 @@
                     case MOVE:
                         const dh = getDropHeight(current, pos, field);
                         pos[1] += dh;
-                        world.score += score(world.level, dh);
+                        world.score += dropscore(world.level, dh);
                         world.shadowdepth -= dh;
 
                         if (dh == 0 || command != MOVE) {
                             world.burn = solidify(current, pos, field, color, width);
                             world.linesCleared += world.burn.length;
                             world.linesClearedInLevel += world.burn.length;
-                            world.score += score(world.level, world.burn.length)
+                            world.score += burnscore(world.level, world.burn.length)
                             current = world.current = null;
                             input.length = 0;
                         }
@@ -351,7 +351,7 @@
                 }
                 else {
                     world.burn = solidify(current, pos, field, color, width);
-                    world.score += score(world.level, world.burn.length);
+                    world.score += burnscore(world.level, world.burn.length);
                     current = world.current = null;
                 }
             }
@@ -653,9 +653,14 @@
             return true;
         }
 
-        function score(level, rows) {
-            const k = Math.pow(1.2, level)
-            return rows ? (5 * (3 * rows - 1) * k) | 0 : 0;
+        function burnscore(level, rows) {
+            const k = Math.pow(1.11, level)
+            return rows ? (100 * (2 * rows - 1) * k) | 0 : 0;
+        }
+
+        function dropscore(level, lines) {
+            const k = Math.pow(1.11, level)
+            return lines ? (35 * lines * k) | 0 : 0;
         }
     </script>
 </body>
