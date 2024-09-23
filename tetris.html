@@ -62,14 +62,13 @@
     <script type="text/javascript">
         const LEFT = 1;
         const RIGHT = 2;
-        const DOWN = 3;
-        const DROP = 4;
-        const ROTATE = 5;
-        const ROTATE2 = 6;
-        const SHADOW = 7;
-        const PAUSE = 8;
-        const MOVE = 9;
-        const TOGGLEROTATE = 10;
+        const DROP = 3;
+        const ROTATE = 4;
+        const ROTATE2 = 5;
+        const SHADOW = 6;
+        const PAUSE = 7;
+        const MOVE = 8;
+        const TOGGLEROTATE = 9;
 
         const figSize = 4;
 
@@ -111,7 +110,7 @@
                         break;
                     case 40: // DOWN
                     case 83: // s
-                        input.push(DOWN);
+                        input.push(ROTATE2);
                         break;
                     case 13: // Enter
                     case 32: // Space
@@ -312,23 +311,6 @@
                             reshadow = true;
                         }
                         break;
-                    case DOWN:
-                        if (command == DOWN) world.wait = 0;
-
-                        if (isValid(current, [pos[0], pos[1] + 1], field, width, height)) {
-                            pos = world.pos = [pos[0], pos[1] + 1];
-                            world.shadowdepth -= 1;
-                        }
-                        else {
-                            world.burn = solidify(current, pos, field, color);
-                            world.linesCleared += world.burn.length;
-                            world.linesClearedInLevel += world.burn.length;
-                            world.score += score(world.level, world.burn.length)
-                            current = world.current = null;
-                            input.length = 0;
-                            break commandprocessing;
-                        }
-                        break;
                     case DROP:
                     case MOVE:
                         const dh = getDropHeight(current, pos, field);
@@ -474,10 +456,8 @@
 
             font(12, uiColor);
 
-            line(8 + 2 * gap, 'wasd', ' or arrows');
-            line(7 + 2 * gap, 'to move and rotate');
-            line(6 + 2 * gap, 'q, e', ' to counter-rotate');
-
+            line(7 + 2 * gap, 'wasd', ' or arrows');
+            line(6 + 2 * gap, 'to move and rotate');
 
             line(5 + gap, 'space', ' to drop');
             line(4 + gap, 'tab', ' to drop with move');
@@ -531,12 +511,6 @@
 
                     row++;
                 }
-
-
-
-
-
-
             }
 
             ctx.restore();
