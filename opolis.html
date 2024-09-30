@@ -4,6 +4,11 @@
 <head>
     <meta charset="utf-8" />
     <title>Opolis</title>
+    <style>
+        canvas {
+            margin: .5ex;
+        }
+    </style>
 </head>
 
 <body>
@@ -25,15 +30,13 @@
     </script>
 
     <script type="text/javascript">
-        const w = 100;
-        const h = 150;
+        const s = 1;
+        const w = 100 * s;
+        const h = 150 * s;
         const width = w * 2;
         const height = h * 2;
 
-        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#fff5eb'];
-
-
-
+        const colors = ['#26547d', '#ef436b', '#ffce5c', '#05c793', '#fff5eb', '#332b15', '#8a7d6d'];
 
         let cardlist = [...cards([0, 1, 2, 3, 4])]
             .filter(card => card.join('').match(/0/))
@@ -41,38 +44,129 @@
 
         shuffle(cardlist);
 
+        let n = 0;
         for (let card of cardlist) {
-            if(rnd(1000)<500)card.reverse();
-            render(card);
+            if (rnd(1000) < 500) card.reverse();
+            render(card, ++n);
         }
 
-        function render(card) {
-            let [_, ctx] = makeCanvas(width, height, true);
+        function render(card, n) {
             const p = w / 20;
+            let [_, ctx] = makeCanvas(width + 2 * p, height + 2 * p, true);
+            ctx.translate(p, p)
+            const r =w/10;
             ctx.beginPath();
-            ctx.moveTo(p * 3, p);
-            ctx.lineTo(width - p * 3, p);
-            ctx.quadraticCurveTo(width - p, p, width - p, p * 3);
-            ctx.lineTo(width - p, height - 3 * p);
-            ctx.quadraticCurveTo(width - p, height - p, width - 3 * p, height - p)
-            ctx.lineTo(3 * p, height - p)
-            ctx.quadraticCurveTo(p, height - p, p, height - 3 * p)
-            ctx.lineTo(p, 3 * p);
-            ctx.quadraticCurveTo(p, p, p * 3, p)
+            ctx.moveTo(r, 0);
+            ctx.lineTo(width - r, 0);
+            ctx.quadraticCurveTo(width, 0, width, r);
+            ctx.lineTo(width, height - r);
+            ctx.quadraticCurveTo(width, height, width - r, height)
+            ctx.lineTo(r, height)
+            ctx.quadraticCurveTo(0, height, 0, height - r)
+            ctx.lineTo(0, r);
+            ctx.quadraticCurveTo(0, 0, r, 0)
 
             ctx.closePath();
             ctx.clip();
 
             ctx.fillStyle = colors[card[0]];
-            ctx.fillRect(0, 0, w, h);
+            ctx.fillRect(-w, -h, 2 * w, 2 * h);
             ctx.fillStyle = colors[card[1]];
-            ctx.fillRect(w, 0, w, h);
+            ctx.fillRect(w, -h, 2 * w, 2 * h);
             ctx.fillStyle = colors[card[2]];
-            ctx.fillRect(0, h, w, h);
+            ctx.fillRect(-w, h, 2 * w, 2 * h);
             ctx.fillStyle = colors[card[3]];
-            ctx.fillRect(w, h, w, h);
+            ctx.fillRect(w, h, 2 * w, 2 * h);
 
-            //ctx.strokeText(card.join(''), w, h)
+            // pick a sector for the campsite
+            ctx.fillStyle = colors[5];
+            let x = w / 2 + w / 4 * (rnd(2) ? 1 : -1);
+            let y = h / 2 + w / 4 * (rnd(2) ? 1 : -1);
+            let i = n % 3;
+            if (card[i] == 0) ++i;
+            if (i % 2) x += w;
+            if (i > 1) y += h;
+
+            ctx.beginPath();
+            ctx.arc(x, y, w / 10, 0, Math.PI * 2)
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.save();
+
+            if (card[0] == 0) {
+                ctx.translate(0, 2 * h)
+                ctx.scale(1, -1);
+            }
+            else if (card[1] == 0) {
+                ctx.translate(2 * w, 2 * h)
+                ctx.scale(-1, -1);
+            }
+            else if (card[3] == 0) {
+                ctx.translate(2 * w, 0)
+                ctx.scale(-1, 1);
+            }
+
+            let c = n % 2 ? [colors[0], colors[5]] : [colors[5], colors[0]]
+            let tr = c[0] == colors[0] ? w / 3 : w / 4
+
+            // pick road/river layout
+            switch (((n / 2) | 0) % 3) {
+
+                case 0:
+                    ctx.strokeStyle = c[0];
+                    ctx.lineWidth = c[0] == colors[0] ? width / 8 : width / 10
+                    ctx.beginPath();
+                    ctx.moveTo(-w / 2, h / 2);
+                    ctx.lineTo(w / 2 - tr, h / 2)
+                    ctx.quadraticCurveTo(w / 2, h / 2, w / 2, h / 2 - tr);
+                    ctx.lineTo(w / 2, -h / 2)
+                    ctx.stroke();
+
+                    ctx.strokeStyle = c[1];
+                    ctx.lineWidth = c[1] == colors[0] ? width / 8 : width / 10
+                    ctx.beginPath();
+                    ctx.moveTo(w + w / 2, -h / 2);
+                    ctx.lineTo(w + w / 2, 3 * h)
+                    ctx.stroke();
+                    break;
+
+                case 1:
+                    ctx.strokeStyle = c[0];
+                    ctx.lineWidth = c[0] == colors[0] ? width / 8 : width / 10
+                    ctx.beginPath();
+                    ctx.moveTo(w + w / 2, 3 * h);
+                    ctx.lineTo(w + w / 2, h + h / 2 + tr)
+                    ctx.quadraticCurveTo(w + w / 2, h + h / 2, w + w / 2 + tr, h + h / 2);
+                    ctx.lineTo(3 * w, h + h / 2)
+                    ctx.stroke();
+
+                    ctx.strokeStyle = c[1];
+                    ctx.lineWidth = c[1] == colors[0] ? width / 8 : width / 10
+                    ctx.beginPath();
+                    ctx.moveTo(- w / 2, h / 2);
+                    ctx.lineTo(3 * w, h / 2)
+                    ctx.stroke();
+
+                    break;
+                default:
+
+                    ctx.strokeStyle = c[0];
+                    ctx.lineWidth = c[0] == colors[0] ? width / 8 : width / 10
+                    ctx.beginPath();
+                    ctx.moveTo(- w / 2, h / 2);
+                    ctx.lineTo(w + w / 2 - tr, h / 2)
+                    ctx.quadraticCurveTo(w + w / 2, h / 2, w + w / 2, h / 2 + tr);
+                    ctx.lineTo(w + w / 2, 3 * h)
+                    ctx.stroke();
+
+                    break;
+
+            }
+
+            ctx.restore();
+
+            //            ctx.fillText(card.join(''), w, h)
         }
 
         function* cards(values) {
