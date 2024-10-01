@@ -23,6 +23,15 @@
         //////////////////////////////////////////////////////////////
         // INIT
         //////////////////////////////////////////////////////////////
+        const LEFT = Symbol();
+        const RIGHT = Symbol();
+        const ROTATE2 = Symbol();
+        const DROP = Symbol();
+        const ROTATE = Symbol();
+        const SHADOW = Symbol()
+        const PAUSE = Symbol();
+        const SOFTDROP = Symbol();
+        const TOGGLEROTATE = Symbol();
 
         const n = 20;
         const m = 9;
@@ -57,12 +66,13 @@
 
         const linesPerLevel = 10;
 
-        let leaderboard = JSON.parse(localStorage.getItem('score') | '[]');
+        let leaderboard = JSON.parse(localStorage.getItem('score') || '[]');
         let best = leaderboard.length ? leaderboard[0][0] : 0;
 
         const ctx = putCanvas(w, h)
 
         let palette = [];
+        let shadePattern = null;
         const state = {};
         initState();
 
@@ -71,9 +81,11 @@
 
             state.bag = [rnd(figs.length)];
             state.current = rnd(figs.length);
-            state.pos = [(m / 2 | 0) - 1, -2, 10]; // x, y plus height over the blocks
-
             state.rot = 0;
+
+            state.pos = { x: (m / 2 | 0) - 1, y: -2, h: 10 }; // x, y plus height over the blocks
+            state.pos.h = getHeight();
+
             state.burn = [];
             state.level = 0;
             state.score = 0;
@@ -82,11 +94,22 @@
             state.fallTime = 300;
             state.gameOverDelay = 0;
             state.gameOver = false;
+            state.paused = false;
             state.input = [];
         }
 
         getTextures().then((img) => {
             palette = renderPalette(img);
+
+            const c = new OffscreenCanvas(1, 4)
+            const ctx2 = c.getContext('2d');
+            ctx2.fillStyle = 'rgba(0,0,0,.2)';
+            ctx2.fillRect(0, 0, 1, 2)
+            2
+            ctx2.fillStyle = 'rgba(0,0,0,.7)';
+            ctx2.fillRect(0, 2, 1, 2)
+            shadePattern = ctx.createPattern(c, 'repeat');
+
             addEventListener('keydown', handleInput);
             loop(60, update, render);
         });
@@ -99,11 +122,20 @@
                 if ((state.gameOverDelay -= delta) > 0) {
                     state.input.length = 0;
                 }
-                else {//if (input.length) {
+                else if (state.input.length) {
                     /// RESET
-                    initState(); 
+                    initState();
                 }
 
+                return;
+            }
+
+            if (state.input.includes(PAUSE)) {
+                state.paused = !state.paused;
+                state.input.length = 0;
+            }
+
+            if (state.paused) {
                 return;
             }
 
@@ -114,13 +146,14 @@
             }
 
             if (state.burn.length) {
+                state.pos.h++;
                 for (let i = state.burn[0]; i >= 0; --i) {
                     for (let j = 0; j < m; ++j) {
                         state.field[i][j] = i - 1 < 0 ? 0 : state.field[i - 1][j];
                     }
                 }
 
-                state. burn.shift();
+                state.burn.shift();
 
                 if (state.burn.length) {
                     for (let i = 0; i < state.burn.length; ++i)++state.burn[i];
@@ -144,7 +177,7 @@
             }
 
             if (state.burn.length) {
-                state.score += burnScore(burn.length, level)
+                state.score += burnScore(state.burn.length)
                 state.burnDelay += 60;
                 return;
             }
@@ -152,21 +185,13 @@
             if ((state.fallDelay -= delta) <= 0) {
                 state.fallDelay += state.fallTime;
 
-                let landed = false;
-
-                check: for (let j = 0; j < 4; ++j) {
-                    for (let i = 3; i >= 0; --i) {
-                        if (figs[state.current][state.rot][i][j] && state.field[state.pos[1] + i + 1][state.pos[0] + j]) {
-                            landed = true
-                            break check;
-                        }
-                    }
-                }
+                let landed = state.pos.h == 0;
 
                 if (landed) {
+                    // solidify current
                     for (let i = 0; i < 4; ++i) {
                         for (let j = 0; j < 4; ++j) {
-                            const [x, y] = [state.pos[0] + j, state.pos[1] + i];
+                            const [x, y] = [state.pos.x + j, state.pos.y + i];
 
                             if (figs[state.current][state.rot][i][j] && x >= 0 && y >= 0 && x < m && y < n) {
                                 state.field[y][x] = state.current + 1;
@@ -174,19 +199,7 @@
                         }
                     }
 
-                    state.pos = [(m / 2 | 0) - 1, -2, 10]
-
-                    for (let i = 0; i < 4; ++i) {
-                        for (let j = 0; j < 4; ++j) {
-                            const [x, y] = [state.pos[0] + j, state.pos[1] + i]
-                            if (figs[state.bag[0]][state.rot][i][j] && x >= 0 && y >= 0 && x < m && y < n && state.field[y][x]) {
-                                state.gameOverDelay = 5000;
-                                state.gameOver = true;
-                                return;
-                            }
-                        }
-                    }
-
+                    state.rot = 0;
                     state.current = state.bag.shift();
 
                     if (state.bag.length == 0) {
@@ -194,20 +207,109 @@
                             for (let j = 0; j < 3; ++j)state.bag.push(i);
                         shuffle(state.bag);
                     }
+                    state.pos = { x: (m / 2 | 0) - 1, y: -2, h: 10 };
+                    state.pos.h = getHeight();
 
-
+                    if (!isValid()) {
+                        state.gameOverDelay = 5000;
+                        state.gameOver = true;
+                        updateScores()
+                        return;
+                    }
                 }
                 else {
-                    state.pos[1]++;
-                    state.pos[2]--;
+                    state.pos.y++;
+                    state.pos.h--;
+                }
+            }
+
+            input: while (state.input.length) {
+                let dir = 1;
+                switch (state.input.pop()) {
+                    case ROTATE:
+                        dir = -1;
+                    case ROTATE2:
+                        let rot = state.rot;
+                        state.rot = (rot + dir + figs[state.current].length) % figs[state.current].length;
+
+                        if (isValid())
+                            state.pos.h = getHeight();
+                        else state.rot = rot;
+                        break;
+                    case LEFT:
+                        dir = -1;
+                    case RIGHT:
+                        let x = state.pos.x;
+                        state.pos.x += dir;
+                        if (isValid())
+                            state.pos.h = getHeight();
+                        else state.pos.x = x;
+                        break;
+                    case DROP:
+                        state.score += dropScore(state.pos.h)
+                        state.pos.y += state.pos.h;
+                        state.pos.h = 0;
+                        state.fallDelay = delta;
+                        break input;
+                    case SOFTDROP:
+                        state.score += dropScore(state.pos.h) / 2
+                        state.pos.y += state.pos.h;
+                        state.pos.h = 0;
+
+                        break;
                 }
             }
 
             return;
         }
 
-        function burnScore(lines, level) {
-            return (lines * 2 - 1 * Math.pow(1.11, level)) | 0;
+        function isValid() {
+            for (let i = 0; i < 4; ++i) {
+                for (let j = 0; j < 4; ++j) {
+                    const [x, y] = [state.pos.x + j, state.pos.y + i]
+                    if (figs[state.current][state.rot][i][j]) {
+                        const fallsOut = x < 0 || x >= m || y >= n;
+                        const clipsField = !fallsOut && y >= 0 && state.field[y][x];
+
+                        if (fallsOut || clipsField)
+                            return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function getHeight() {
+            let height = Infinity;
+            column: for (let j = 0; j < 4; ++j) {
+
+                const col = state.pos.x + j;
+                if (col >= 0 && col < m)
+
+                    for (let i = 3; i >= 0; --i) {
+                        if (figs[state.current][state.rot][i][j]) {
+                            height = Math.min(height, n - state.pos.y - i);
+
+                            for (let h = 0; h < height; ++h) {
+                                if (state.pos.y + i + h + 1 >= 0 && (state.pos.y + i + h > n || state.field[state.pos.y + i + h + 1][col])) {
+                                    height = Math.min(height, h);
+                                    break;
+                                }
+                            }
+
+                            continue column;
+                        }
+                    }
+            }
+            return height;
+        }
+
+        function burnScore(lines) {
+            return (lines * 2 - 1 * Math.pow(1.11, state.level)) | 0;
+        }
+
+        function dropScore(lines) {
+            return (lines * 2 - 1 * Math.pow(1.11, state.level)) | 0;
         }
 
         //////////////////////////////////////////////////////////////
@@ -234,7 +336,7 @@
             if (!state.gameOver)
                 for (let i = 0; i < 4; ++i) {
                     for (let j = 0; j < 4; ++j) {
-                        const [x, y, ys] = [state.pos[0] + j, state.pos[1] + i, state.pos[1] + i + state.pos[2]];
+                        const [x, y, ys] = [state.pos.x + j, state.pos.y + i, state.pos.y + i + state.pos.h];
 
                         if (x >= 0 && x < m && ys >= 0 && ys < n && figs[state.current][state.rot][i][j] > 0)
                             renderCell(ofst + x * size, ofst + ys * size, figs.length + 1);
@@ -258,20 +360,85 @@
             const side = ofst + (m + 1) * size - size / 2;
             ctx.fillText('Next', side, ofst + 6.5 * size)
             ctx.fillText('Best', side, ofst + size)
-            ctx.fillText(best, side, ofst + 2.25 * size)
+            ctx.fillText(Math.max(best, state.score), side, ofst + 2.25 * size)
             ctx.fillText('Score', side, ofst + 3.75 * size)
             ctx.fillText(state.score, side, ofst + 5 * size)
             ctx.fillText('Level', side, ofst + 12 * size)
             ctx.fillText(state.level, side, ofst + 13.5 * size);
 
             font(size / 2);
-            ctx.fillText('Move and rotate with', side, n * size - ofst - 8 * size / 2);
-            ctx.fillText('WASD', side, n * size - ofst - 7 * size / 2);
-            ctx.fillText('SPACE to drop', side, n * size - ofst - 5 * size / 2);
-            ctx.fillText('TAB to soft-drop', side, n * size - ofst - 4 * size / 2);
-            ctx.fillText('P to pause', side, n * size - ofst - 2 * size / 2)
-            ctx.fillText('R to toggle rotation', side, n * size - ofst - size / 2)
-            ctx.fillText('S to toggle shadow', side, n * size - ofst)
+            ctx.fillText('Move and rotate with', side, n * size - ofst - 6 * size / 2);
+            ctx.fillText('WASD', side, n * size - ofst - 5 * size / 2);
+            ctx.fillText('SPACE to drop', side, n * size - ofst - 3 * size / 2);
+            ctx.fillText('Z to soft-drop', side, n * size - ofst - 2 * size / 2);
+
+            if (state.paused) {
+                ctx.fillStyle = shadePattern
+                ctx.fillRect(0, 0, w, h);
+
+                ctx.fillStyle = '#888';
+                font(size * 3);
+                ctext('PAUSE', 9 * size);
+
+                font(size / 2)
+            }
+
+            ctx.fillText(state.paused ? 'P to unpause' : 'P to pause', side, n * size - ofst)
+
+            if (state.gameOver) {
+                ctx.fillStyle = shadePattern
+                ctx.fillRect(0, 0, w, h);
+
+                ctx.fillStyle = '#fff';
+                font(size * 2);
+                ctext('Game Over', 4 * size);
+
+                if (state.gameOverDelay <= 0) {
+                    font(size / 2);
+                    ctext('Press any key to restart', 5 * size)
+                }
+
+                let n = 0;
+
+                font(2 * size / 3);
+                for (const [score, level] of leaderboard) {
+                    if (n == 0) {
+                        rtext('Score', w / 2 - size/4, 6 * size);
+                        text('Level', w / 2 + size/4, 6 * size);
+                    }
+                    rtext(score.toLocaleString(), w / 2 - size/4, (7 + n) * size);
+                    text(level.toString(), w / 2 + size/4, (7 + n++) * size);
+                }
+            }
+        }
+
+        function text(text, x, y) {
+            const fs = ctx.fillStyle;
+            ctx.fillStyle = 'rgba(0,0,0,.6)'
+
+            ctx.fillText(text, x + 3, y + 3)
+            ctx.fillStyle = fs;
+            ctx.fillText(text, x, y)
+        }
+
+        function rtext(text, x, y) {
+            const w = ctx.measureText(text).width;
+            const fs = ctx.fillStyle;
+            ctx.fillStyle = 'rgba(0,0,0,.6)'
+
+            ctx.fillText(text, x - w + 3, y + 3)
+            ctx.fillStyle = fs;
+            ctx.fillText(text, x - w, y)
+        }
+
+        function ctext(text, y) {
+            const x = ctx.measureText(text).width;
+            const fs = ctx.fillStyle;
+            ctx.fillStyle = 'rgba(0,0,0,.6)'
+
+            ctx.fillText(text, (w - x) / 2 + 3, y + 3)
+            ctx.fillStyle = fs;
+            ctx.fillText(text, (w - x) / 2, y)
         }
 
         function renderCell(x, y, cell) {
@@ -289,7 +456,7 @@
                 p.unshift(ctx.getImageData(size * i, 0, size, size));
             }
 
-            p.unshift(new ImageData(size, size));//empty spot
+            p.unshift(new ImageData(size, size)); //empty spot
 
             return p;
         }
@@ -355,40 +522,41 @@
             return ctx;
         }
 
-        function handleInput(e){
-            let len = state.input.length;
-                switch (e.keyCode) {
-                    case 37: // LEFT
-                        input.push(LEFT);
-                        break;
-                    case 39: // RIGHT
-                        input.push(RIGHT);
-                        break;
-                    case 40: // DOWN
-                        input.push(ROTATE2);
-                        break;
-                    case 32: // Space
-                        input.push(DROP);
-                        break;
-                    case 38: // UP
-                        input.push(ROTATE);
-                        break;
-                    case 72: // h
-                        input.push(SHADOW)
-                        break;
-                    case 80: // p
-                        input.push(PAUSE);
-                        break;
-                    case 90: // z
-                        input.push(SOFTDROP);
-                        break;
-                    case 82: // r
-                        state.input.push(TOGGLEROTATE);
-                        break;
-                }
+        function updateScores() {
+            leaderboard.push([state.score, state.level]);
+            leaderboard.sort(([s1, _], [s2, __]) => s2 - s1);
+            if (leaderboard.length > 10) leaderboard.length = 10;
+            localStorage.setItem('score', JSON.stringify(leaderboard));
+        }
 
-                if (input.length != len)
-                    e.preventDefault();
+        function handleInput(e) {
+            let len = state.input.length;
+            switch (e.keyCode) {
+                case 37: // LEFT
+                    state.input.push(LEFT);
+                    break;
+                case 39: // RIGHT
+                    state.input.push(RIGHT);
+                    break;
+                case 40: // DOWN
+                    state.input.push(ROTATE2);
+                    break;
+                case 32: // Space
+                    state.input.push(DROP);
+                    break;
+                case 38: // UP
+                    state.input.push(ROTATE);
+                    break;
+                case 80: // p
+                    state.input.push(PAUSE);
+                    break;
+                case 90: // z
+                    state.input.push(SOFTDROP);
+                    break;
+            }
+
+            if (state.input.length != len)
+                e.preventDefault();
         }
 
         function figures() {
