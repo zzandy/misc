@@ -64,7 +64,9 @@
             } return field;
         }
 
-        const linesPerLevel = 10;
+        const initialFallTime = 2000;
+        const figuresPerLevel = 50;
+        const speedup = .92;
 
         let leaderboard = JSON.parse(localStorage.getItem('score') || '[]');
         let best = leaderboard.length ? leaderboard[0][0] : 0;
@@ -91,11 +93,12 @@
             state.score = 0;
             state.burnDelay = 0;
             state.fallDelay = 0;
-            state.fallTime = 300;
+            state.fallTime = initialFallTime;
             state.gameOverDelay = 0;
             state.gameOver = false;
             state.paused = false;
             state.input = [];
+            state.figuresServed = 0;
         }
 
         getTextures().then((img) => {
@@ -201,6 +204,11 @@
 
                     state.rot = 0;
                     state.current = state.bag.shift();
+                    if (++state.figuresServed >= figuresPerLevel) {
+                        state.figuresServed = 0;
+                        ++state.level;
+                        state.fallTime *= speedup;
+                    }
 
                     if (state.bag.length == 0) {
                         for (let i = 0; i < figs.length; ++i)
@@ -211,7 +219,7 @@
                     state.pos.h = getHeight();
 
                     if (!isValid()) {
-                        state.gameOverDelay = 5000;
+                        state.gameOverDelay = 3000;
                         state.gameOver = true;
                         updateScores()
                         return;
@@ -252,7 +260,7 @@
                         state.fallDelay = delta;
                         break input;
                     case SOFTDROP:
-                        state.score += dropScore(state.pos.h) / 2
+                        state.score += (dropScore(state.pos.h) / 2) | 0;
                         state.pos.y += state.pos.h;
                         state.pos.h = 0;
 
@@ -403,11 +411,12 @@
                 font(2 * size / 3);
                 for (const [score, level] of leaderboard) {
                     if (n == 0) {
-                        rtext('Score', w / 2 - size/4, 6 * size);
-                        text('Level', w / 2 + size/4, 6 * size);
+                        rtext('Score', w / 2 - size / 4, 6 * size);
+                        text('Level', w / 2 + size / 4, 6 * size);
                     }
-                    rtext(score.toLocaleString(), w / 2 - size/4, (7 + n) * size);
-                    text(level.toString(), w / 2 + size/4, (7 + n++) * size);
+
+                    rtext((state.score == score ? '* ' : '') + score.toLocaleString(), w / 2 - size / 4, (7 + n) * size);
+                    text(level.toString(), w / 2 + size / 4, (7 + n++) * size);
                 }
             }
         }
