@@ -107,13 +107,13 @@
             const c = new OffscreenCanvas(1, 4)
             const ctx2 = c.getContext('2d');
             ctx2.fillStyle = 'rgba(0,0,0,.2)';
-            ctx2.fillRect(0, 0, 1, 2)
-            2
+            ctx2.fillRect(0, 0, 1, 2);
             ctx2.fillStyle = 'rgba(0,0,0,.7)';
             ctx2.fillRect(0, 2, 1, 2)
             shadePattern = ctx.createPattern(c, 'repeat');
 
             addEventListener('keydown', handleInput);
+            addEventListener('blur', () => state.paused = true)
             loop(60, update, render);
         });
 
@@ -133,7 +133,7 @@
                 return;
             }
 
-            if (state.input.includes(PAUSE)) {
+            if (state.input.includes(PAUSE) || (state.paused && state.input.includes(DROP))) {
                 state.paused = !state.paused;
                 state.input.length = 0;
             }
