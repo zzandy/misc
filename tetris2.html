@@ -51,7 +51,7 @@
                 const fill = [];
                 if (i >= n / 2) {
                     for (let j = 0; j < m; ++j) {
-                        fill[j] = j < Math.max(2, 6 - (i - n / 2)) ? 0 : rnd(figs.length) + 1;
+                        fill[j] = 0; j < Math.max(2, 6 - (i - n / 2)) ? 0 : rnd(figs.length) + 1;
                     }
 
                     shuffle(fill);
@@ -149,12 +149,13 @@
             }
 
             if (state.burn.length) {
-                state.pos.h++;
                 for (let i = state.burn[0]; i >= 0; --i) {
                     for (let j = 0; j < m; ++j) {
                         state.field[i][j] = i - 1 < 0 ? 0 : state.field[i - 1][j];
                     }
                 }
+
+                state.pos.h = getHeight();
 
                 state.burn.shift();
 
@@ -215,7 +216,7 @@
                             for (let j = 0; j < 3; ++j)state.bag.push(i);
                         shuffle(state.bag);
                     }
-                    state.pos = { x: (m / 2 | 0) - 1, y: -2, h: 10 };
+                    state.pos = { x: (m / 2 | 0) - 1, y: -1, h: 0 };
                     state.pos.h = getHeight();
 
                     if (!isValid()) {
@@ -234,6 +235,12 @@
             input: while (state.input.length) {
                 let dir = 1;
                 switch (state.input.pop()) {
+                    case DROP:
+                        state.score += dropScore(state.pos.h)
+                        state.pos.y += state.pos.h;
+                        state.pos.h = 0;
+                        state.fallDelay = delta;
+                        break input;
                     case ROTATE:
                         dir = -1;
                     case ROTATE2:
@@ -253,12 +260,6 @@
                             state.pos.h = getHeight();
                         else state.pos.x = x;
                         break;
-                    case DROP:
-                        state.score += dropScore(state.pos.h)
-                        state.pos.y += state.pos.h;
-                        state.pos.h = 0;
-                        state.fallDelay = delta;
-                        break input;
                     case SOFTDROP:
                         state.score += (dropScore(state.pos.h) / 2) | 0;
                         state.pos.y += state.pos.h;
@@ -299,7 +300,8 @@
                             height = Math.min(height, n - state.pos.y - i);
 
                             for (let h = 0; h < height; ++h) {
-                                if (state.pos.y + i + h + 1 >= 0 && (state.pos.y + i + h > n || state.field[state.pos.y + i + h + 1][col])) {
+                                const row = state.pos.y + i + h + 1
+                                if (row >= 0 && (row >= n || state.field[row][col])) {
                                     height = Math.min(height, h);
                                     break;
                                 }
