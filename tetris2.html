@@ -51,7 +51,7 @@
                 const fill = [];
                 if (i >= n / 2) {
                     for (let j = 0; j < m; ++j) {
-                        fill[j] = 0; j < Math.max(2, 6 - (i - n / 2)) ? 0 : rnd(figs.length) + 1;
+                        fill[j] = j < Math.max(2, 6 - (i - n / 2)) ? 0 : rnd(figs.length) + 1;
                     }
 
                     shuffle(fill);
