@@ -57,7 +57,7 @@
             'Thin slippery ice covers the floor', 'Foul stench fills the room'
         ]);
 
-        const dirs = ['north', 'east', 'up', 'south', 'west', 'down'];
+        const dirs = ['north', 'east', 'south', 'west'];
 
         let desc = 0;
         for (const room of locations) {
@@ -75,11 +75,11 @@
         function link(r1, r2) {
             let n = 6;
             let d = rnd(dirs);
-            while ((d in r1 || dirs[(dirs.indexOf(d) + 3) % 6] in r2) && n-- > 0) d = rnd(dirs);
+            while ((d in r1 || dirs[(dirs.indexOf(d) + 2) % 4] in r2) && n-- > 0) d = rnd(dirs);
             if (n == 0) return;
 
             r1[d] = r2;
-            r2[dirs[(dirs.indexOf(d) + 3) % 6]] = r1;
+            r2[dirs[(dirs.indexOf(d) + 2) % 4]] = r1;
         }
 
         for (const feat of features) {
