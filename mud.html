@@ -1,258 +1,274 @@
 <!DOCTYPE html>
-
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
 <head>
     <meta charset="utf-8" />
-	<title></title>
-	<style type="text/css">
-		html, body{ background: #000030;color: #f0e68c; font-family:monospace}
+    <title>Dungeon</title>
+    <style>
+        * {
+            font: 12pt retro_gamingregular;
+        }
 
-		input, input:active {
-			border: 1px solid;border-width: 1px 0 0;width: 100%;
-			background-color:  #333359;
-			background-color: hsla(1, 0%, 100%, .2);
-			color: white;
-		}
-	</style>
+        body {
+            background-color: #222222;
+            color: grey;
+        }
+
+        em {
+            color: silver
+        }
+
+        #container {
+            margin: 0 auto;
+            width: 60rem;
+            white-space: pre;
+        }
+
+        input {
+            width: 100%;
+            border: none;
+            background-color: black;
+            color: silver
+        }
+
+        input:focus {
+            outline: none
+        }
+    </style>
 </head>
+
 <body>
-<div id="out"></div>
-	<input type="text" id="in"/>
-<script type="text/javascript">
-	
-	function out(){
-						  
-		var oe = document.getElementById('out');
-		out = function () {
-			oe.innerHTML += '<div>'+  [].join.call(arguments, ' ') +'</div>';
-		}				   
+    <div id="container"><input type="text" id="input" autofocus /></div>
+    <script type="text/javascript">
 
-		out.apply(null, arguments);
-	}
+        const con = document.getElementById('container');
+        const inp = document.getElementById('input');
 
-	function Room(name, description) {
-		this.east = null;
-		this.south = null;
-		this.north = null;
-		this.west = null;
-		this.items = null;
-		this.name = name;
-		this.description = description;
-		this.features = [];
-		this.items = [];
-	}
+        const inventory = [];
+        const rooms = [];
 
-	var inventory = [];
+        const features = shuffle(['exit', 'fountain', 'chasm', 'tombstone', 'skeleton', 'statue', 'cobwebs']);
+        const items = shuffle('key;bone;brick;vine;amulet'.split(';'));
+        const locations = shuffle('dark cellar;crypt;narrow passage;torture chamber;well room;twisted stairs;cold room'.split(';'));
+        const descriptions = shuffle([
+            'Water is dripping from the ceiling', 'Damp moss covers the walls', 'Floor is made of old, squeaky oak boards',
+            "Some beast have made a lair here, you probably shouldn't stay here longer than necessary",
+            "Walls are overgrown with white mold that oozes something you don't want to know",
+            'Thin slippery ice covers the floor', 'Foul stench fills the room'
+        ]);
 
-	var names = 'dark cellar;crypt;narrow passage;torture chamber;well room;twisted stairs;cold room'.split(';');
-	var descriptions = [
-		'Water is dripping from the ceiling', 'Moss covers the walls','Floor is made of old, squeaky oak boards',
-		"Some beast have made a lair here, you probably shouldn't stay here longer than necessary",
-		"Walls are overgrown with white mold that oozes something you don't want to know"
-	];
+        const dirs = ['north', 'east', 'up', 'south', 'west', 'down'];
 
-	var numRooms = names.length;
+        let desc = 0;
+        for (const room of locations) {
+            if (rooms.push({ name: room, desc: descriptions[(desc++) % descriptions.length], items: [], features: [] }) > 1) {
+                link(rooms[rooms.length - 2], rooms[rooms.length - 1]);
+            }
+        }
 
-	Array.prototype.shuffle = function () {
-			var o = [];
-			for (var i = 0; i < this.length; ++i)o[i] = this[i];
-			for (var j, x, i = o.length; i; j = Math.floor(Math.random() * i), x = o[--i], o[i] = o[j], o[j] = x);
-			return o;
-	}
+        for (let i = 0; i < locations.length; ++i) {
+            const r1 = rnd(rooms)
+            const r2 = rnd(rooms);
+            if (r1 !== r2) link(r1, r2);
+        }
 
-	String.prototype.capitalize = function() {
-		return this.charAt(0).toUpperCase() + this.slice(1);
-	}
+        function link(r1, r2) {
+            let n = 6;
+            let d = rnd(dirs);
+            while ((d in r1 || dirs[(dirs.indexOf(d) + 3) % 6] in r2) && n-- > 0) d = rnd(dirs);
+            if (n == 0) return;
 
-	String.prototype.subs= function(placeholder) {
-		return this.indexOf('%') >= 0 || this.indexOf('$') >= 0
-			? this.replace("%", placeholder).replace('$', placeholder.capitalize)
-			: this + placeholder;
-	}
+            r1[d] = r2;
+            r2[dirs[(dirs.indexOf(d) + 3) % 6]] = r1;
+        }
 
-	String.prototype.subsa = function (array) {
-		var repr = array.length == 1 ? array[0] : array.slice(0, array.length - 1).join(', ') + ' and ' + array[array.length - 1];
-		return this.subs(repr);
-	}
+        for (const feat of features) {
+            rnd(rooms).features.push(feat);
+        }
 
-	var rooms= [];
-	for (var i = 0; i < numRooms; ++i) {
-		rooms.push(new Room(names[i], descriptions[i%descriptions.length]));
-	}
+        for (const item of items) {
+            rnd(rooms).items.push(item);
+        }
 
-	var dirs = ['north', 'east', 'south', 'west'];
+        function describe(room, intro) {
+            intro = intro || 'You are in the';
+            print(intro + ' [' + room.name + ']');
+            print(room.desc);
 
-	function link(r1, r2, r1dir) {
+            if (room.features.length > 0) {
+                print('In the room there ' + (room.features.length == 1 ? 'is a' : 'are') + ' ' + nicejoin(room.features));
+            }
 
-		if (r1 !== r2 && r1[r1dir] == null) {
-			r1[r1dir] = r2;
-			r2[dirs[(dirs.indexOf(r1dir) + 2) % dirs.length]] = r1;
+            if (room.items.length > 0) {
+                print('Lying on the floor ' + (room.items.length == 1 ? 'is a' : 'are') + ' ' + nicejoin(room.items));
+            }
 
-			return true;
-		}
+            const directions = dirs.filter(dir => dir in room);
+            print('There ' + (directions.length > 1 ? 'are passages' : 'is a passage') + ' going ' + nicejoin(directions));
+        }
 
-		return false;
-	}
+        function nicejoin(parts) {
+            return parts.length == 0 ? 'nothing' : parts.length == 1 ? parts[0] : parts.slice(0, parts.length - 1).join(', ') + ' and ' + parts[parts.length - 1]
+        }
 
-	function random(a) {
-		return a[(Math.random() * a.length )| 0];
-	}
+        let currentRoom = rooms[0];
+        let turns = 0;
+        print('Welcome to the dungeon, try to escape it.', 'feel free to [look] around or ask for [help].', ' ')
+        describe(currentRoom)
 
-	var n = rooms.length * 2;
-	while (n > 0) {
-		var r1 = random(rooms);
-		var r2 = random(rooms);
-		var dir = random(dirs);
+        const commands = {
+            help: ['show this help',
+                () => {
+                    print('Available commands: ')
+                    for (const [name, [desc]] of Object.entries(commands)) {
+                        print('    [' + name + '] - ' + desc);
+                    }
+                }],
+            go: ['move to a direction',
+                (arg) => {
+                    if (!arg) { print('Move where?'); return; }
 
-		if (link(r1, r2, dir))--n;
-	}
+                    const dir = dirs.filter(dir => dir.startsWith(arg.toLowerCase()))[0];
 
+                    if (dir) {
+                        if (dir in currentRoom) {
+                            currentRoom = currentRoom[dir];
+                            ++turns;
+                            print('You move [' + dir + ']')
+                            describe(currentRoom, 'You enter the');
+                        }
+                        else {
+                            print('You can\'t go ' + dir);
+                        }
+                    }
+                    else {
+                        print('Unknown direction [' + arg + ']');
+                    }
 
-	var features = ['exit', 'fountain', 'chasm', 'tombstone', 'skeleton'];
-	var items = 'key;bone;brick;vine;amulet'.split(';');
+                }
+            ],
+            inv: ['list inventory',
+                () => {
+                    print('You have ' + nicejoin(inventory));
+                }
+            ],
+            pick: ['pick up something from the environment',
+                (arg) => {
+                    if (!arg) { print('Pick up what?'); return; }
 
-	features.shuffle().forEach(function(f) {
-		random(rooms).features.push(f);
-	});
+                    const item = currentRoom.items.filter(item => item.startsWith(arg.toLowerCase()))[0];
 
+                    if (item) {
+                        currentRoom.items.splice(currentRoom.items.indexOf(item), 1);
+                        inventory.push(item)
+                        print('You pick up the [' + item + ']')
+                    }
+                    else {
+                        print('There is no [' + arg + '] here')
+                    }
+                }
+            ],
+            drop: ['drop an item from inventory',
+                (arg) => {
+                    if (!arg) { print('Drop what?'); return; }
 
-	items.shuffle().forEach(function (f) {
-		random(rooms).items.push(f);
-	});
+                    const item = inventory.filter(item => item.startsWith(arg.toLowerCase()))[0];
 
-														 function MultiLine() {
-		this.options = [].shuffle.apply(arguments);
-		this.no = 0;
-	}
+                    if (item) {
+                        inventory.splice(inventory.indexOf(item), 1);
+                        currentRoom.items.push(item)
+                        print('You drop the [' + item + ']')
+                    }
+                    else {
+                        print('You dont have a [' + arg + ']')
+                    }
+                }
+            ],
+            look: ['look around',
+                () => {
+                    describe(currentRoom)
+                }
+            ],
+            exit: ['exit the dungeon',
+                () => {
+                    if (currentRoom.features.includes('exit')) {
+                        if (!inventory.includes('key')) {
+                            print('The heavy exit door is locked');
+                            return;
+                        }
 
-	MultiLine.prototype.get = function () {
+                        currentRoom = {
+                            name: 'clear', desc: 'You are free to do anything you want now.', items: [], features: []
+                        }
 
-		if (this.no >= this.options.length) {
-			this.options = this.options.shuffle();
-			this.no = 0;
-		}
+                        for (const dir of dirs) currentRoom[dir] = currentRoom;
 
-		return this.options[this.no++];
-	}
+                        print('You ascend the crooked stairs out for the damp dungeon and into crisp morning air');
+                        print('You\'ve spent ' + turns + ' turns in the dungeon')
+                        if (inventory.includes('amulet'))
+                            print('You managed to find the coveted amulet');
+                    }
+                    else {
+                        print('There is no exit here');
+                    }
+                }
+            ]
+        }
 
-	var currentRoom = rooms[Math.floor(Math.random() * rooms.length)];
+        inp.addEventListener('keydown', (e) => {
+            if (e.key == 'Enter') {
+                process(inp.value);
+                inp.value = ''
+            }
+        })
 
-	var enterDesc = new MultiLine("You are now in the %", "You enter the %");
-	var locDesc = new MultiLine("You look around the %", "You are in the %");
+        function process(command) {
+            command = command.trim().replace(/\s+/g, ' ');
+            const args = command.split(' ');
 
-	function display(room, first) {
+            if (args[0] in commands) commands[args[0]][1](...args.slice(1));
+            else notFound(args[0]);
+        }
 
-		var intro = first ? enterDesc : locDesc;
+        function notFound(command) {
+            print('Don\'t understand [' + command + ']');
+        }
 
-		out(intro.get().replace("%", room.name));
-		out(room.description);
+        function print(...lines) {
+            for (let text of lines) {
+                const div = document.createElement('div');
+                div.innerText = text;
+                div.innerHTML = div.innerText.replace(/\[([^\]\n]+)\]/g, '<em>$1</em>')
+                inp.before(div)
+                inp.scrollIntoView()
+            }
+        }
 
-		if(room.features.length>0)
-			out(('Inside the ' + room.name + ' you can see %.').subsa(room.features));
+        function rnd(a) {
+            return a instanceof Array ? a[rnd(a.length)] : ((a * Math.random()) | 0)
+        }
 
-		if (room.items.length > 0)
-			out("Lying on the floor is %.".subsa(room.items));
+        function shuffle(a) {
+            let i = a.length;
 
-	}
+            while (0 !== i) {
+                let idx = rnd(i--);
 
-	display(currentRoom);
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
 
+            return a;
+        }
 
-	var turns = 1;
-	var exitIntro = new MultiLine("There is an exit %.", "You can go %.", "$ wall has a door.", "A passage leads %.");
-
-	var commands = {
-		'look': function() {
-			display(currentRoom);
-			var msgs = [];
-
-			['north', 'south', 'east', 'west'].forEach(function(d) {
-				if (currentRoom[d] != null)
-					msgs.push(exitIntro.get().replace('%', d).replace('$', d.capitalize()));
-			});
-			out.apply(null, msgs);
-		},
-		'help': function() {
-
-			out('Available commands:');
-
-			for (var i in commands) {
-				if (commands.hasOwnProperty(i)) out('&nbsp;&nbsp;&nbsp;&nbsp;' + i);
-
-			}
-
-		},
-		'exit': function() {
-			if (currentRoom.features.indexOf('exit') == -1)
-				out("This room has no exit to the overworld.");
-			else if (inventory.indexOf('key') == -1)
-				out("The exit door is locked.");
-			else
-				out("You escape after " + turns + " turns" + (inventory.indexOf('amulet') == -1 ? '.' : " with the precious amulet!"));
-		},
-		'pick': function (itemName) {
-			var id = currentRoom.items.indexOf(itemName);
-
-			if (id == -1) out('There is no ' + itemName + " here.");
-			else {
-				currentRoom.items.splice(id, 1);
-				inventory.push(itemName);
-				out('Picked ' + itemName);
-			}
-		},
-		'drop': function(itemName) {
-			var i = inventory.indexOf(itemName);
-
-			if (i == -1) out("You don't have " + itemName);
-			else {
-				inventory.splice(i, 1);
-				out('Dropped ' + itemName);
-			}
-
-		},
-		'go': function(direction) {
-
-			if (direction == undefined || direction === '')
-				out("Please provide direction");
-			else if (direction in { north: 1, east: 1, south: 1, west: 1 }) {
-
-				if (currentRoom[direction] != null) {
-					currentRoom = currentRoom[direction];
-					++turns;
-					display(currentRoom, true);
-
-				} else
-					out(currentRoom.name.capitalize() + " doesn't have a " + direction + " exit.");
-			} else {
-				out("Unknown direction: " + direction);
-			}
-
-		},
-		'inv': function () {
-			if (inventory.length == 0)
-				out("Your inventory is empty");
-			else
-				out("You have %.".subsa(inventory));
-		}
-	};
-
-	function run(command) {
-
-		command = command.split(' ');
-		if (command[0] in commands) {
-			commands[command[0]].apply(commands[command[0]], command.slice(1));
-		} else {
-			out("Don't understand: " + command[0]);
-		}
-	}
-
-	document.getElementById('in').addEventListener('keydown', function(e) {
-		if (e.keyCode === 13) {
-			run(this.value);
-			this.value = '';
-		}
-	});
-	
-</script>
+    </script>
+    <style>
+        @font-face {
+            font-family: 'retro_gamingregular';
+            src: url(data:application/font-woff2;charset=utf-8;base64,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) format('woff2');
+            font-weight: normal;
+            font-style: normal;
+        }
+    </style>
 </body>
+
 </html>
