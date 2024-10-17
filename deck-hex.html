@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Deck</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'inline-block';
+
+            document.body.appendChild(can);
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script type="text/javascript">
+        const tau = Math.PI * 2;
+        const sin = Math.sin;
+        const cos = Math.cos;
+
+        const w = 100;
+        const h = 150;
+        const width = w * 2;
+        const height = h * 2;
+
+        const colors = ['#ce5cff', '#26547d', '#ef436b', '#ffce5c', '#05c793'];
+        const configs = [1234, 1235, 1243, 1245, 1253, 1254, 1324, 1325, 1342, 1352, 1423, 1425, 1432, 1435, 1452, 1453, 1523, 1524, 1532, 1534, 1542, 1543, 2345, 2354, 3124, 3125, 3142, 3145, 3152, 3154, 3421, 3425, 3452, 3521, 3524, 3542, 4123, 4125, 4132, 4135, 4152, 4153, 4321, 4325, 4352, 4513, 4521, 4532, 5123, 5124, 5132, 5134, 5142, 5143, 5321, 5324, 5342, 5413, 5421, 5432]
+            .map(x => x.toString().split('').map(x => parseInt(x) - 1))
+            //.filter(x=>!x.includes(0));
+        configs.sort(([_, a], [__, b]) => a - b)
+        //shuffle(configs);
+
+        configs.forEach(render);
+
+        function render([left, top, right, bottom]) {
+            let [_, ctx] = makeCanvas(width, height, true);
+            const p = w / 20;
+
+            ctx.beginPath();
+            ctx.moveTo(p * 3, p);
+            ctx.lineTo(width - p * 3, p);
+            ctx.quadraticCurveTo(width - p, p, width - p, p * 3);
+            ctx.lineTo(width - p, height - 3 * p);
+            ctx.quadraticCurveTo(width - p, height - p, width - 3 * p, height - p)
+            ctx.lineTo(3 * p, height - p)
+            ctx.quadraticCurveTo(p, height - p, p, height - 3 * p)
+            ctx.lineTo(p, 3 * p);
+            ctx.quadraticCurveTo(p, p, p * 3, p)
+
+            ctx.closePath();
+            ctx.clip();
+
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, width, height)
+
+            const h1 = height / 6;
+            const h2 = height / 3;
+
+            ctx.fillStyle = colors[left];
+
+            path(ctx, [0, height - h1,
+                0, h1,
+                width / 2, h2,
+                width / 2, height - h2
+
+            ]);
+
+            ctx.fill();
+
+            ctx.fillStyle = colors[top];
+            path(ctx, [0, 0,
+                width, 0,
+                width, h1,
+                width / 2, h2,
+                0, h1]);
+            ctx.fill();
+
+            ctx.fillStyle = colors[right];
+            path(ctx, [width / 2, h2, width, h1, width, height - h1, width / 2, height - h2])
+            ctx.fill();
+
+            ctx.fillStyle = colors[bottom];
+            path(ctx, [0, height, 0, height - h1, width / 2, height - h2, width, height - h1, width, height])
+            ctx.fill();
+        }
+
+        function path(ctx, points) {
+            ctx.beginPath(points[0], points[1])
+
+            for (let i = 2; i < points.length; i += 2) {
+                ctx.lineTo(points[i], points[i + 1]);
+            }
+
+            ctx.lineTo(points[0], points[1])
+
+            ctx.closePath();
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+    </script>
+</body>
+
+</html>
