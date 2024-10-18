@@ -37,6 +37,7 @@
         const m = 9;
 
         const size = 32;
+        const fps = 60;
 
         const ofst = 2
         const w = (m + 7) * size + ofst * 2;
@@ -91,6 +92,14 @@
             state.burn = [];
             state.level = 0;
             state.score = 0;
+
+            state.lastGain = 0;
+            state.lastGainAge = Infinity;
+
+            state.scores = [];
+            state.scoresIdx = 0;
+            for (let i = 0; i < 5 * fps; ++i)state.scores.push(0);
+
             state.burnDelay = 0;
             state.fallDelay = 0;
             state.fallTime = initialFallTime;
@@ -114,7 +123,7 @@
 
             addEventListener('keydown', handleInput);
             addEventListener('blur', () => state.paused = true)
-            loop(60, update, render);
+            loop(fps, update, render);
         });
 
         //////////////////////////////////////////////////////////////
@@ -142,6 +151,10 @@
                 return;
             }
 
+            state.scoresIdx = (state.scoresIdx + 1) % state.scores.length;
+            state.scores[state.scoresIdx] = 0;
+            state.lastGainAge += delta;
+
             /// BURN LOGIC
             if (state.burnDelay > 0) {
                 state.burnDelay -= delta;
@@ -155,7 +168,7 @@
                     }
                 }
 
-                state.pos.h = getHeight();
+                //state.pos.h = getHeight();
 
                 state.burn.shift();
 
@@ -181,7 +194,7 @@
             }
 
             if (state.burn.length) {
-                state.score += burnScore(state.burn.length)
+                score(burnScore(state.burn.length))
                 state.burnDelay += 60;
                 return;
             }
@@ -193,15 +206,16 @@
 
                 if (landed) {
                     // solidify current
-                    for (let i = 0; i < 4; ++i) {
-                        for (let j = 0; j < 4; ++j) {
-                            const [x, y] = [state.pos.x + j, state.pos.y + i];
+                    if (state.current != null)
+                        for (let i = 0; i < 4; ++i) {
+                            for (let j = 0; j < 4; ++j) {
+                                const [x, y] = [state.pos.x + j, state.pos.y + i];
 
-                            if (figs[state.current][state.rot][i][j] && x >= 0 && y >= 0 && x < m && y < n) {
-                                state.field[y][x] = state.current + 1;
+                                if (figs[state.current][state.rot][i][j] && x >= 0 && y >= 0 && x < m && y < n) {
+                                    state.field[y][x] = state.current + 1;
+                                }
                             }
                         }
-                    }
 
                     state.rot = 0;
                     state.current = state.bag.shift();
@@ -220,7 +234,7 @@
                     state.pos.h = getHeight();
 
                     if (!isValid()) {
-                        state.gameOverDelay = 3000;
+                        state.gameOverDelay = 2000;
                         state.gameOver = true;
                         updateScores()
                         return;
@@ -236,10 +250,21 @@
                 let dir = 1;
                 switch (state.input.pop()) {
                     case DROP:
-                        state.score += dropScore(state.pos.h)
+                        score(dropScore(state.pos.h));
                         state.pos.y += state.pos.h;
                         state.pos.h = 0;
                         state.fallDelay = delta;
+                        // solidify current
+                        for (let i = 0; i < 4; ++i) {
+                            for (let j = 0; j < 4; ++j) {
+                                const [x, y] = [state.pos.x + j, state.pos.y + i];
+
+                                if (figs[state.current][state.rot][i][j] && x >= 0 && y >= 0 && x < m && y < n) {
+                                    state.field[y][x] = state.current + 1;
+                                }
+                            }
+                        }
+                        state.current = null;
                         break input;
                     case ROTATE:
                         dir = -1;
@@ -314,12 +339,22 @@
             return height;
         }
 
+        function score(n) {
+            state.score += n;
+            if (state.lastGainAge < 100)
+                state.lastGain += n;
+            else
+                state.lastGain = n;
+            state.lastGainAge = 0;
+            state.scores[state.scoresIdx] += n;
+        }
+
         function burnScore(lines) {
-            return (lines * 2 - 1 * Math.pow(1.11, state.level)) | 0;
+            return ((lines * 2 - 1) * Math.pow(1.11, state.level)) | 0;
         }
 
         function dropScore(lines) {
-            return (lines * 2 - 1 * Math.pow(1.11, state.level)) | 0;
+            return ((lines * 2 - 1) * Math.pow(1.11, state.level)) | 0;
         }
 
         //////////////////////////////////////////////////////////////
@@ -343,7 +378,7 @@
             }
 
             // render current
-            if (!state.gameOver)
+            if (!state.gameOver && state.current != null)
                 for (let i = 0; i < 4; ++i) {
                     for (let j = 0; j < 4; ++j) {
                         const [x, y, ys] = [state.pos.x + j, state.pos.y + i, state.pos.y + i + state.pos.h];
@@ -371,12 +406,17 @@
             ctx.fillText('Next', side, ofst + 6.5 * size)
             ctx.fillText('Best', side, ofst + size)
             ctx.fillText(Math.max(best, state.score), side, ofst + 2.25 * size)
+
+            var score = ctx.measureText(state.score).width;
             ctx.fillText('Score', side, ofst + 3.75 * size)
             ctx.fillText(state.score, side, ofst + 5 * size)
             ctx.fillText('Level', side, ofst + 12 * size)
             ctx.fillText(state.level, side, ofst + 13.5 * size);
 
             font(size / 2);
+
+            ctx.fillText('+' + (state.scores.reduce((s, a, _, x) => s + a / x.length, 0) * fps).toFixed(1) + '/s', side, ofst + 5.5 * size);
+
             ctx.fillText('Move and rotate with', side, n * size - ofst - 6 * size / 2);
             ctx.fillText('WASD', side, n * size - ofst - 5 * size / 2);
             ctx.fillText('SPACE to drop', side, n * size - ofst - 3 * size / 2);
@@ -394,6 +434,9 @@
             }
 
             ctx.fillText(state.paused ? 'P to unpause' : 'P to pause', side, n * size - ofst)
+
+            ctx.fillStyle = 'rgba(88, 88, 88, ' + fade(Math.max(0, 1000 - state.lastGainAge) / 1000) + ')';
+            ctx.fillText('+' + state.lastGain, side + score + 5, ofst + 5 * size)
 
             if (state.gameOver) {
                 ctx.fillStyle = shadePattern
@@ -589,6 +632,8 @@
                 img.onload = () => resolve(img);
             });
         }
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
     </script>
     <style>
         @font-face {
