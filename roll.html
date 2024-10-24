@@ -25,6 +25,8 @@
                 if (x instanceof Point) return new Point(this.x + x.x, this.y + x.y);
                 return new Point(this.x + x, this.y + y);
             }
+
+            scale(n) { return new Point(this.x * n, this.y * n) }
         }
 
         class AABB {
@@ -90,7 +92,7 @@
                 this.pos = pos;
                 this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
 
-                this._value = null;
+                this.value = null;
 
                 this.neighbors = [null, null, null, null];
 
@@ -124,10 +126,11 @@
                 }
             }
 
-            get value() { return this._value }
+            get die() { return this.value }
 
-            set value(v) {
-                this._value = v;
+            set die(v) {
+                this.value = v;
+                v.cell = this;
                 const size = this.bb.w;
 
                 for (let i = TOP; i <= LEFT; ++i)
@@ -143,6 +146,9 @@
                 this.pos = pos;
                 this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
 
+                this.rollOthers = rnd(100) < 10;
+
+                this.cell = null;
                 this.value = rnd(6) + 1;
 
                 this.acc = 0;
@@ -154,9 +160,13 @@
             }
 
             roll() {
+                if (this.state != IDLE) return;
+
                 this.state = ROLLING;
                 this.anim = rollAnimTimes;
                 this.acc = 0;
+
+                if (this.rollOthers) this.cell.neighbors.forEach(n => n?.die?.roll())
             }
         }
 
@@ -215,7 +225,7 @@
         }
 
         const root = new Cell(new Point(0, 0), gridStep);
-        root.value = new Die(root.pos, cellSize)
+        root.die = new Die(root.pos, cellSize)
 
         const cursor = new Point(0, 0);
         let click = false;
@@ -260,14 +270,14 @@
         }
 
         function updateCell(cell, delta) {
-            if (click && !cell.value && cell.bb.contains(cursor) && score >= buyDiePrice) {
+            if (click && !cell.die && cell.bb.contains(cursor) && score >= buyDiePrice) {
                 score -= buyDiePrice;
                 buyDiePrice = (buyDiePrice * 1.2) | 0;
-                cell.value = new Die(cell.pos, cellSize);
+                cell.die = new Die(cell.pos, cellSize);
                 click = false;
             }
 
-            if (cell.value) updateDie(cell.value, delta);
+            if (cell.die) updateDie(cell.die, delta);
 
         }
 
@@ -284,8 +294,48 @@
 
         function dieScored(die) {
             let gain = die.value;
+            pop('+' + die.value, die.pos);
+
+            let sameAdj = 0;
+            let floor = 0;
+
+            if (die.cell.neighbors.every(n => n?.die?.value == die.value)) {
+                floor = 3;
+                gain += die.value * 9;
+                pop('Cross of ' + die.value + 's', die.pos);
+            }
+            
+            for (let i = TOP; i < BOTTOM; ++i) {
+                let n = die.cell.neighbors[i];
+
+                if (n?.die?.state == IDLE && n?.die?.value == die.value) sameAdj++;
+
+                let s = 0;
+                while (s < 5 && n?.die?.state == IDLE && n?.die?.value == die.value) {
+                    ++s;
+                    n = n.neighbors[i];
+                }
+
+                n = die.cell.neighbors[(i + 2) % (LEFT + 1)]
+                if (n?.die?.state == IDLE && n?.die?.value == die.value) sameAdj++;
+
+                while (s < 5 && n?.die?.state == IDLE && n?.die?.value == die.value) {
+                    ++s;
+                    n = n.neighbors[(i + 2) % (LEFT + 1)]
+                }
+
+                if (s > floor) {
+                    gain += die.value * (2 * s - 1);
+                    pop([',', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos.add(die.cell.neighbors[i].pos).scale(.5))
+                }
+            }
+
             score += gain;
-            sprites.push(new Sprite('+' + gain, die.pos, cellSize / 2, -130 + rnd(80), rollAnimDuration * 4));
+        }
+
+        function pop(text, pos) {
+            console.log(text)
+            sprites.push(new Sprite(text, pos, cellSize / 2, -130 + rnd(80), rollAnimDuration * 4));
         }
 
         function updateSprite(sprite, delta) {
@@ -316,12 +366,12 @@
             ctx.rotate(die.tilt.value * deg);
             ctx.scale(die.scale.value, die.scale.value);
 
-            drawDice(ctx, die.value, cellSize);
+            drawDice(ctx, die.value, cellSize, die.rollOthers ? 'blue' : null);
             ctx.restore();
         }
 
         function renderCell(cell) {
-            if (!cell.value) {
+            if (!cell.die) {
                 ctx.font = '24pt Georgia'
                 if (score < buyDiePrice) {
                     ctx.fillStyle = 'grey';
@@ -337,7 +387,7 @@
                 ctext(buyDiePrice, cell.pos.x, cell.pos.y, 0)
             }
 
-            if (cell.value) renderDie(cell.value)
+            if (cell.die) renderDie(cell.die)
         }
 
         function render() {
@@ -431,11 +481,11 @@
             return [can, ctx];
         }
 
-        function drawDice(ctx, value, dieSize) {
+        function drawDice(ctx, value, dieSize, color) {
             ctx.save();
             ctx.translate(-dieSize / 2, -dieSize / 2);
             roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
-            ctx.fillStyle = "#ece5c9";
+            ctx.fillStyle = color || "#ece5c9";
             ctx.fill()
 
             roundedRect(ctx, dieSize / 40, +dieSize / 40, dieSize - dieSize / 20, dieSize - dieSize / 20, dieSize / 4);
