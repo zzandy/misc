@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" style="background-color: white;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Roll</title>
+</head>
+
+<body>
+    <script type="text/javascript">
+        const IDLE = Symbol('IDLE');
+        const ROLLING = Symbol('ROLLING');
+
+        class Point {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+            }
+        }
+
+        class AABB {
+            constructor(x, y, width, height) {
+                this.x = x;
+                this.y = y; this.w = width;
+                this.h = height || width
+            }
+
+            contains(x, y) {
+                if (x instanceof Point)
+                    return this.x <= x.x && this.y <= x.y && this.x + this.w > x.x && this.h + this.y > x.y
+
+                if (x instanceof AABB)
+                    return this.x >= x.x && this.y >= x.y && this.x + this.w < x.x + x.w && this.h + this.y < x.y + x.h
+
+                return this.x <= x && this.y <= y && this.x + this.w > x && this.h + this.y > y
+            }
+
+            intersects(other) {
+                return this.x <= other.x + other.w && this.x + this.w >= other.x && this.y <= other.y + other.h && this.y + this.h >= other.y
+            }
+        }
+
+        const cellSize = 128;
+        let k = 6;
+        const ctx = fullscreenCanvas(k);
+        ctx.imageSmoothingEnabled = false;
+
+        ctx.fillRounded = (x, y, w, h, r) => {
+            ctx.beginPath();
+            ctx.moveTo(r, 0,);
+            ctx.lineTo(w - r, 0);
+            ctx.quadraticCurveTo(w, 0, w, r);
+            ctx.lineTo(w, h - r);
+            ctx.quadraticCurveTo(w, h, w - r, h);
+            ctx.lineTo(r, h)
+            ctx.quadraticCurveTo(0, h, 0, h - r)
+            ctx.lineTo(0, r)
+            ctx.quadraticCurveTo(0, 0, r, 0);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+
+        class Cell {
+            constructor(pos, fill) {
+                this.pos = pos;
+                this.fill = fill;
+
+                this.value = rnd(6);
+
+                this.acc = 0;
+                this.state = IDLE;
+                this.anim = 0;
+            }
+        }
+
+        const cells = [];
+
+
+        for (let i = 0; i < 3; ++i)for (let j = 0; j < 8; ++j) { cells.push(new Cell(new Point(j + 2, i + 2))) }
+
+        const cursor = new Point(0, 0);
+        let click = false;
+        ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX, cursor.y = clientY })
+        addEventListener('mouseup', () => click = true)
+        //addEventListener('wheel', ({ wheelDeltaY }) => k = Math.min(20, Math.max(1, (k + wheelDeltaY * .1 | 0))))
+
+        function updateCell(cell, delta) {
+            if (cell.state === IDLE && click && (new AABB(cell.pos.x * cellSize - 1, cell.pos.y * cellSize - 1, cellSize)).contains(cursor)) {
+                cell.state = ROLLING;
+                cell.anim = 10;
+                cell.acc = 0;
+            }
+            if (cell.state === ROLLING && (cell.acc -= delta) <= 0) {
+                let value;
+                while ((value = rnd(6)) == cell.value);
+                cell.value = value;
+
+                if (--cell.anim > 0) {
+                    cell.acc += 150;
+                }
+                else {
+                    // done animating
+                    cell.state = IDLE;
+                }
+            }
+        }
+
+        function update(delta) {
+            cells.forEach(cell => updateCell(cell, delta));
+            click = false
+        }
+
+        function renderCell(cell) {
+            ctx.save();
+            ctx.translate(cell.pos.x * cellSize, cell.pos.y * cellSize);
+
+            if ((new AABB(cell.pos.x * cellSize - 1, cell.pos.y * cellSize - 1, cellSize)).contains(cursor)) {
+                ctx.fillStyle = 'white';
+                roundedRect(ctx, cell.pos.x - 5, cell.pos.y - 5, cellSize + 10, cellSize + 10, cellSize / 10);
+                ctx.fill();
+            }
+
+            drawDice(ctx, cell.pos.x, cell.pos.y, cell.value + 1, cellSize);
+            ctx.restore();
+        }
+
+        function render() {
+            let grad = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height);
+
+            grad.addColorStop(0, '#004010')
+            grad.addColorStop(1, '#003008')
+
+            ctx.fillStyle = grad
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+
+            for (let cell of cells) {
+                renderCell(cell)
+            }
+
+            ctx.strokeStyle = 'white';
+            ctx.strokeRect(cursor.x - .5, cursor.y - .5, 12 + 1, 12 + 1);
+
+        }
+
+        loop(60, update, render);
+
+        function loop(fps, update, render) {
+            const delta = 1000 / fps;
+            let acc = delta;
+            let then = 0;
+
+            tick();
+
+            function tick() {
+                const now = performance.now();
+                acc += now - then;
+                then = now;
+
+                let updated = acc > delta;
+                while (acc > delta) {
+                    acc -= delta;
+                    update(delta);
+                }
+                if (updated) render();
+
+                requestAnimationFrame(tick);
+            }
+        }
+
+        function rnd(a) {
+            return a instanceof Array ? a[rnd(a.length)] : ((a * Math.random()) | 0)
+        }
+
+        function fullscreenCanvas() {
+            const [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            const can = document.createElement('canvas');
+            const ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            return [can, ctx];
+        }
+
+
+        function drawDice(ctx, x, y, value, dieSize) {
+            ctx.save();
+            ctx.translate(x, y);
+
+            roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
+            ctx.fillStyle = "#ece5c9";
+            ctx.fill()
+
+            roundedRect(ctx, dieSize / 40, +dieSize / 40, dieSize - dieSize / 20, dieSize - dieSize / 20, dieSize / 4);
+            ctx.fillStyle = "rgba(255, 255, 255, .5)";
+            ctx.fill()
+
+            roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
+            ctx.lineWidth = dieSize / 80;
+            ctx.strokeStyle = 'black';
+            ctx.stroke();
+
+            ellipse(ctx, dieSize / 9.9, dieSize / 9.9, dieSize / 15, dieSize / 90, Math.PI * 3 / 4);
+
+            ctx.fillStyle = "rgb(255, 255, 255, .9)";
+            ctx.fill()
+
+            const k = 4.5;
+            let r = dieSize / 8;
+
+            if (value % 2 == 1) {
+                // middle
+                dot(ctx, dieSize / 2, dieSize / 2, r)
+            }
+
+            if (value > 1) {
+                // corners 1 and 3
+                dot(ctx, dieSize / k, dieSize / k, r)
+                dot(ctx, dieSize - dieSize / k, dieSize - dieSize / k, r)
+            }
+
+            if (value > 3) {
+                // corners 2 and 4
+                dot(ctx, dieSize - dieSize / k, dieSize / k, r)
+                dot(ctx, dieSize / k, dieSize - dieSize / k, r)
+            }
+
+            if (value == 6) {
+                // mid-sides
+                dot(ctx, dieSize / k, dieSize / 2, r)
+                dot(ctx, dieSize - dieSize / k, dieSize / 2, r)
+            }
+
+            ctx.restore();
+        }
+
+        function dot(ctx, x, y, r) {
+            circle(ctx, x, y, r);
+            ctx.fillStyle = 'black';
+            ctx.fill();
+
+            ellipse(ctx, x + r / 2, y + r / 2, r / 6, r / 17, Math.PI * 3 / 4);
+            ctx.fillStyle = 'white';
+            ctx.fill();
+        }
+
+        function ellipse(ctx, x, y, r1, r2, a) {
+            ctx.beginPath()
+            ctx.ellipse(x, y, r1, r2, a, 0, 2 * Math.PI);
+            ctx.closePath();
+        }
+
+        function circle(ctx, x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.closePath();
+        }
+
+        function roundedRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x, y + radius);
+            ctx.lineTo(x, y + height - radius);
+            ctx.arcTo(x, y + height, x + radius, y + height, radius);
+            ctx.lineTo(x + width - radius, y + height);
+            ctx.arcTo(x + width, y + height, x + width, y + height - radius, radius);
+            ctx.lineTo(x + width, y + radius);
+            ctx.arcTo(x + width, y, x + width - radius, y, radius);
+            ctx.lineTo(x + radius, y);
+            ctx.arcTo(x, y, x, y + radius, radius);
+            ctx.closePath();
+        }
+    </script>
+</body>
+
+</html>
