@@ -12,10 +12,18 @@
         const IDLE = Symbol('IDLE');
         const ROLLING = Symbol('ROLLING');
 
+        const tau = 2 * Math.PI;
+        const deg = tau / 360;
+
         class Point {
             constructor(x, y) {
                 this.x = x;
                 this.y = y;
+            }
+
+            add(x, y) {
+                if (x instanceof Point) return new Point(this.x + x.x, this.y + x.y);
+                return new Point(this.x + x, this.y + y);
             }
         }
 
@@ -41,10 +49,13 @@
             }
         }
 
-        const cellSize = 128;
+        const gridStep = 128;
+        const cellSize = gridStep * .9;
         let k = 6;
         const ctx = fullscreenCanvas(k);
         ctx.imageSmoothingEnabled = false;
+
+        const [ox, oy] = [ctx.canvas.width / 2, ctx.canvas.height / 2];
 
         ctx.fillRounded = (x, y, w, h, r) => {
             ctx.beginPath();
@@ -61,69 +72,272 @@
             ctx.fill();
         }
 
+        class Grid {
+            constructor(rootCell) {
+                this.root = rootCell
+            }
+        }
 
+        const TOP = 0
+        const RIGHT = 1
+        const BOTTOM = 2
+        const LEFT = 3
+        const dirs = ['TOP', 'RIGHT', 'BOTTOM', 'LEFT']
+
+        const cells = [];
         class Cell {
-            constructor(pos, fill) {
+            constructor(pos, size, dir, neighbor) {
                 this.pos = pos;
-                this.fill = fill;
+                this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
 
-                this.value = rnd(6);
+                this._value = null;
+
+                this.neighbors = [null, null, null, null];
+
+                if (dir !== undefined) {
+                    this.link(dir, neighbor)
+                }
+
+                cells.push(this)
+            }
+
+            link(dir, neighbor, short) {
+
+                const d3 = (dir + 2) % (LEFT + 1);
+                this.neighbors[dir] = neighbor;
+                neighbor.neighbors[d3] = this;
+
+                if (short) return;
+
+                const d1 = (dir + 1) % (LEFT + 1);
+                const d2 = (dir + 3) % (LEFT + 1);
+
+                const sideA = neighbor.neighbors[d1]?.neighbors[d3];
+                const sideB = neighbor.neighbors[d2]?.neighbors[d3];
+
+                if (sideA) {
+                    this.link(d1, sideA, true);
+                }
+
+                if (sideB) {
+                    this.link(d2, sideB, true);
+                }
+            }
+
+            get value() { return this._value }
+
+            set value(v) {
+                this._value = v;
+                const size = this.bb.w;
+
+                for (let i = TOP; i <= LEFT; ++i)
+                    if (!this.neighbors[i]) {
+                        const cell = new Cell(this.pos.add((i == RIGHT ? 1 : i == LEFT ? -1 : 0) * size, (i == TOP ? -1 : i == BOTTOM ? 1 : 0) * size), size);
+                        cell.link((i + 2) % (LEFT + 1), this);
+                    }
+            }
+        }
+
+        class Die {
+            constructor(pos, size) {
+                this.pos = pos;
+                this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
+
+                this.value = rnd(6) + 1;
 
                 this.acc = 0;
                 this.state = IDLE;
                 this.anim = 0;
+
+                this.tilt = new Value(0);
+                this.scale = new Value(1);
+            }
+
+            roll() {
+                this.state = ROLLING;
+                this.anim = rollAnimTimes;
+                this.acc = 0;
             }
         }
 
-        const cells = [];
+        class Value {
+            constructor(initial) {
+                this._value = initial;
+                this.target = initial;
+                this.acc = 0;
+                this.time = 0;
+            }
 
+            get value() {
+                return this.acc == 0 ? this._value : this.acc >= this.time ? this.target : this._value + (this.target - this._value) * fade(this.acc / this.time)
+            }
 
-        for (let i = 0; i < 3; ++i)for (let j = 0; j < 8; ++j) { cells.push(new Cell(new Point(j + 2, i + 2))) }
+            reset(value, target, time) {
+                this._value = value;
+                this.target = target;
+                this.time = time;
+                this.acc = 0;
+            }
+
+            set(target, time) {
+                this._value = this.value;
+                this.target = target;
+                this.time = time;
+                this.acc = 0;
+            }
+
+            tick(delta) {
+                this.acc += delta;
+            }
+        }
+
+        class Sprite {
+            constructor(value, initialPos, maxDist, dir, duration) {
+                this.value = value;
+                this.initialPos = initialPos;
+                this.dist = maxDist;
+                this.dir = dir * deg;
+                this.duration = duration;
+                this.age = 0;
+            }
+
+            tick(delta) {
+                this.age += delta;
+            }
+
+            get pos() {
+                return new Point(this.initialPos.x + this.dist * Math.cos(this.dir) * fade(this.age / this.duration), this.initialPos.y + this.dist * Math.sin(this.dir) * fade(this.age / this.duration));
+            }
+
+            get isLive() {
+                return this.age < this.duration;
+            }
+        }
+
+        const root = new Cell(new Point(0, 0), gridStep);
+        root.value = new Die(root.pos, cellSize)
 
         const cursor = new Point(0, 0);
         let click = false;
-        ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX, cursor.y = clientY })
+        ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX - ox, cursor.y = clientY - oy })
         addEventListener('mouseup', () => click = true)
-        //addEventListener('wheel', ({ wheelDeltaY }) => k = Math.min(20, Math.max(1, (k + wheelDeltaY * .1 | 0))))
 
-        function updateCell(cell, delta) {
-            if (cell.state === IDLE && click && (new AABB(cell.pos.x * cellSize - 1, cell.pos.y * cellSize - 1, cellSize)).contains(cursor)) {
-                cell.state = ROLLING;
-                cell.anim = 10;
-                cell.acc = 0;
+        const rollAnimDuration = 150;
+        const rollAnimTimes = 10;
+
+        let buyDiePrice = 20;
+        let score = buyDiePrice * 10;
+
+        let scoreShift = new Value(0);
+        let sprites = [];
+
+        function updateDie(die, delta) {
+            die.tilt.tick(delta);
+            die.scale.tick(delta);
+
+            if (die.state === IDLE && click && die.bb.contains(cursor)) {
+                die.roll()
             }
-            if (cell.state === ROLLING && (cell.acc -= delta) <= 0) {
-                let value;
-                while ((value = rnd(6)) == cell.value);
-                cell.value = value;
 
-                if (--cell.anim > 0) {
-                    cell.acc += 150;
+            if (die.state === ROLLING && (die.acc -= delta) <= 0) {
+                let value;
+                while ((value = rnd(6) + 1) == die.value);
+                die.value = value;
+
+                if (--die.anim > 0) {
+                    die.acc += rollAnimDuration;
+                    die.tilt.reset(-40 + rnd(80), 0, rollAnimDuration);
+                    die.scale.reset(1.1, 1, rollAnimDuration);
                 }
                 else {
                     // done animating
-                    cell.state = IDLE;
+                    dieScored(die);
+
+                    scoreShift.reset(-40 + rnd(80), 0, rollAnimDuration);
+                    die.state = IDLE;
                 }
             }
         }
 
-        function update(delta) {
-            cells.forEach(cell => updateCell(cell, delta));
-            click = false
+        function updateCell(cell, delta) {
+            if (click && !cell.value && cell.bb.contains(cursor) && score >= buyDiePrice) {
+                score -= buyDiePrice;
+                buyDiePrice = (buyDiePrice * 1.2) | 0;
+                cell.value = new Die(cell.pos, cellSize);
+                click = false;
+            }
+
+            if (cell.value) updateDie(cell.value, delta);
+
         }
 
-        function renderCell(cell) {
-            ctx.save();
-            ctx.translate(cell.pos.x * cellSize, cell.pos.y * cellSize);
+        // powerup ideas
+        // x2 dice - multiply any single dice score by a factor
+        // edge - bonus for each empty neighbour
+        // pair - give score for a pair of adjacent dice of the same value
+        // set - give score for three of adjacent dice of the same value
+        // square - give score for four of adjacent dice of the same value
+        // cross -  give score for five of adjacent dice of the same value
+        // auto roller - roll adjacent dice on a timer
+        //     or roll adjacent dice of the same value
+        // megadie - a dice that occupies four spots
 
-            if ((new AABB(cell.pos.x * cellSize - 1, cell.pos.y * cellSize - 1, cellSize)).contains(cursor)) {
+        function dieScored(die) {
+            let gain = die.value;
+            score += gain;
+            sprites.push(new Sprite('+' + gain, die.pos, cellSize / 2, -130 + rnd(80), rollAnimDuration * 4));
+        }
+
+        function updateSprite(sprite, delta) {
+            sprite.tick(delta);
+            return sprite.isLive;
+        }
+
+        function update(delta) {
+            scoreShift.tick(delta);
+
+            cells.forEach(cell => updateCell(cell, delta));
+            sprites = sprites.filter(sprite => updateSprite(sprite, delta));
+
+
+            click = false;
+        }
+
+        function renderDie(die) {
+            ctx.save();
+
+            if (die.state == IDLE && die.bb.contains(cursor)) {
                 ctx.fillStyle = 'white';
-                roundedRect(ctx, cell.pos.x - 5, cell.pos.y - 5, cellSize + 10, cellSize + 10, cellSize / 10);
+                roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 10);
                 ctx.fill();
             }
 
-            drawDice(ctx, cell.pos.x, cell.pos.y, cell.value + 1, cellSize);
+            ctx.translate(die.pos.x, die.pos.y);
+            ctx.rotate(die.tilt.value * deg);
+            ctx.scale(die.scale.value, die.scale.value);
+
+            drawDice(ctx, die.value, cellSize);
             ctx.restore();
+        }
+
+        function renderCell(cell) {
+            if (!cell.value) {
+                ctx.font = '24pt Georgia'
+                if (score < buyDiePrice) {
+                    ctx.fillStyle = 'grey';
+                }
+                else if (cell.bb.contains(cursor)) {
+                    ctx.fillStyle = 'white';
+                }
+                else {
+                    ctx.fillStyle = 'silver'
+                }
+                ctx.fill();
+
+                ctext(buyDiePrice, cell.pos.x, cell.pos.y, 0)
+            }
+
+            if (cell.value) renderDie(cell.value)
         }
 
         function render() {
@@ -135,13 +349,35 @@
             ctx.fillStyle = grad
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
+            ctx.font = '32pt Georgia'
+            ctx.fillStyle = 'white'
+
+            ctext(score, cellSize, cellSize, scoreShift.value * deg)
+
+            ctx.save();
+            ctx.translate(ox, oy);
+
             for (let cell of cells) {
                 renderCell(cell)
             }
 
-            ctx.strokeStyle = 'white';
-            ctx.strokeRect(cursor.x - .5, cursor.y - .5, 12 + 1, 12 + 1);
+            for (let sprite of sprites) {
+                ctx.fillStyle = 'white'
+                ctext(sprite.value, sprite.pos.x - 1, sprite.pos.y + 2, sprite.dir + 90 * deg)
+                ctx.fillStyle = 'black'
+                ctext(sprite.value, sprite.pos.x, sprite.pos.y, sprite.dir + 90 * deg)
+            }
 
+            ctx.restore();
+        }
+
+        function ctext(text, x, y, rot) {
+            ctx.save();
+            const w = ctx.measureText(text).width;
+            ctx.translate(x, y);
+            ctx.rotate(rot);
+            ctx.fillText(text, -w / 2, 0)
+            ctx.restore()
         }
 
         loop(60, update, render);
@@ -185,7 +421,6 @@
         }
 
         function makeCanvas(width, height, alpha) {
-
             const can = document.createElement('canvas');
             const ctx = can.getContext('2d', { alpha });
 
@@ -196,11 +431,9 @@
             return [can, ctx];
         }
 
-
-        function drawDice(ctx, x, y, value, dieSize) {
+        function drawDice(ctx, value, dieSize) {
             ctx.save();
-            ctx.translate(x, y);
-
+            ctx.translate(-dieSize / 2, -dieSize / 2);
             roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
             ctx.fillStyle = "#ece5c9";
             ctx.fill()
@@ -283,6 +516,8 @@
             ctx.arcTo(x, y, x, y + radius, radius);
             ctx.closePath();
         }
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
     </script>
 </body>
 
