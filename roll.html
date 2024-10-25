@@ -9,6 +9,29 @@
 
 <body>
     <script type="text/javascript">
+        const sounds = [];
+        const numSounds = 3;
+        let lastSound = 0;
+
+        for (let i = 0; i < numSounds; ++i) {
+            row = [0]
+            for (let j = 0; j < 5; ++j)
+                row.push(new Audio(`dice${i}.mp3`));
+            sounds.push(row)
+        }
+
+        function sound() {
+            if (!soundOn) return;
+
+            const s = sounds[lastSound][sounds[lastSound][0] + 1];
+            setTimeout(() => s.play(), 5 + rnd(20));
+
+            if (++sounds[lastSound][0] >= sounds[lastSound].length - 1) sounds[lastSound][0] = 0;
+            lastSound = (lastSound + 1 + rnd(numSounds - 1)) % numSounds;
+        }
+
+        let soundOn = true;
+
         const IDLE = Symbol('IDLE');
         const ROLLING = Symbol('ROLLING');
 
@@ -74,31 +97,29 @@
             ctx.fill();
         }
 
-        class Grid {
-            constructor(rootCell) {
-                this.root = rootCell
-            }
-        }
-
         const TOP = 0
         const RIGHT = 1
         const BOTTOM = 2
         const LEFT = 3
         const dirs = ['TOP', 'RIGHT', 'BOTTOM', 'LEFT']
 
+        const ENABLE_ROLL_OTHERS = Symbol('enable roll others');
+        const ENABLE_EDGE_BONUS = Symbol('enable edge bonus');
+        const ENABLE_AUTOROLL = Symbol('enable auto roll');
+        const ENABLE_MEGADIE = Symbol('enable megadie');
+
+        const actions = []
+        let action = null;
         const cells = [];
         class Cell {
-            constructor(pos, size, dir, neighbor) {
+            constructor(pos, size, dir) {
                 this.pos = pos;
                 this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
 
                 this.value = null;
+                this.dist = 0;
 
                 this.neighbors = [null, null, null, null];
-
-                if (dir !== undefined) {
-                    this.link(dir, neighbor)
-                }
 
                 cells.push(this)
             }
@@ -108,6 +129,8 @@
                 const d3 = (dir + 2) % (LEFT + 1);
                 this.neighbors[dir] = neighbor;
                 neighbor.neighbors[d3] = this;
+
+                this.dist = Math.min(this.dist == 0 ? Infinity : this.dist, neighbor.dist + 1)
 
                 if (short) return;
 
@@ -119,10 +142,16 @@
 
                 if (sideA) {
                     this.link(d1, sideA, true);
+
+                    const head = sideA.neighbors[d3]?.neighbors[d2];
+                    if (head) this.link(d3, head, true)
                 }
 
                 if (sideB) {
                     this.link(d2, sideB, true);
+
+                    const head = sideB.neighbors[d3]?.neighbors[d1];
+                    if (head) this.link(d3, head, true)
                 }
             }
 
@@ -146,10 +175,12 @@
                 this.pos = pos;
                 this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
 
-                this.rollOthers = rnd(100) < 10;
+                this.rollOthers = false;
+                this.autoRoll = false;
+                this.edgeBonus = false;
 
                 this.cell = null;
-                this.value = rnd(6) + 1;
+                this._value = rnd(6) + 1;
 
                 this.acc = 0;
                 this.state = IDLE;
@@ -159,14 +190,38 @@
                 this.scale = new Value(1);
             }
 
+            get value() { return this.state == IDLE ? this._value : undefined }
+            get rollingValue() { return this._value }
+            set value(v) { this._value = v }
+
             roll() {
                 if (this.state != IDLE) return;
+
+                if (click && this.bb.contains(cursor)) {
+                    if (action == ENABLE_EDGE_BONUS && this.autoRoll == false && this.rollOthers == false && this.edgeBonus == false) {
+                        this.edgeBonus = true;
+                        action = null;
+                    }
+                    if (action == ENABLE_ROLL_OTHERS && this.autoRoll == false && this.rollOthers == false) {
+                        this.edgeBonus = false;
+                        this.rollOthers = true;
+                        action = null;
+                    }
+                    if (action == ENABLE_AUTOROLL && this.autoRoll == false) {
+                        this.edgeBonus = false;
+                        this.rollOthers = false;
+                        this.autoRoll = true;
+                        action = null;
+                    }
+                }
+
+                sound();
 
                 this.state = ROLLING;
                 this.anim = rollAnimTimes;
                 this.acc = 0;
 
-                if (this.rollOthers) this.cell.neighbors.forEach(n => n?.die?.roll())
+                if (this.rollOthers || this.autoRoll) setTimeout(() => this.cell.neighbors.forEach(n => n?.die?.roll()), 400)
             }
         }
 
@@ -224,19 +279,81 @@
             }
         }
 
+        const uiLine = cellSize / 2;
+        const btnSize = cellSize / 2;
+
+        class Button {
+            constructor(pos, draw, click) {
+                this.pos = pos;
+                this.bb = new AABB(pos.x - btnSize / 2, pos.y - btnSize / 2, btnSize);
+                this.draw = draw;
+                this.click = click;
+            }
+        }
+
+        class Action {
+            constructor(symbol, label, x, color, initialPrice, inflationFactor, pipColor) {
+                this.symbol = symbol;
+                this.label = label;
+                this.color = color;
+                this.pipColor = pipColor || 'white';
+                this.price = initialPrice
+                this.inflationFactor = inflationFactor;
+
+                this.button = new Button(new Point(x - ox, uiLine - oy), (btn) => this.draw(btn), (btn) => this.click(btn))
+
+                this.shown = false;
+            }
+
+            click() {
+                if (action || score < this.price) return;
+
+                score -= this.price;
+                this.price = this.price * this.inflationFactor | 0;
+
+                action = this.symbol;
+            }
+
+            draw(btn) {
+                ctx.save();
+                ctx.translate(btn.pos.x, btn.pos.y)
+
+                drawDice(ctx, 5, btn.bb.w, this.color, this.pipColor)
+
+                ctx.fillStyle = action || score < this.price ? 'grey' : 'white';
+                ctext(this.label, 0, -btn.bb.w / 3, 0);
+                ctext(this.price, 0, btn.bb.w / 3, 0);
+
+                ctx.restore();
+            }
+        }
+
+        let actionCursor = cellSize;
+
+        function addAction(symbol, label, color, initialPrice, inflationFactor, pipColor) {
+            actions.push(new Action(symbol, label, actionCursor += (2 * btnSize), color, initialPrice, inflationFactor, pipColor));
+        }
+
+        addAction(ENABLE_EDGE_BONUS, 'Edge', '#262ae1', 50, 1.1);
+        addAction(ENABLE_ROLL_OTHERS, 'Chain', '#b10e0a', 100, 1.15);
+        addAction(ENABLE_AUTOROLL, 'Auto', '#d19002', 500, 1.3, '#b10e0a');
+        //addAction(ENABLE_MEGADIE, 'MEGA', 'black', 500, 1.2, 'white');
+
+        const ui = [new Button(new Point(ox - uiLine, -oy + uiLine), drawMute, toggleMute)];
+
         const root = new Cell(new Point(0, 0), gridStep);
-        root.die = new Die(root.pos, cellSize)
 
         const cursor = new Point(0, 0);
         let click = false;
         ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX - ox, cursor.y = clientY - oy })
-        addEventListener('mouseup', () => click = true)
+        addEventListener('mousedown', () => click = true)
 
         const rollAnimDuration = 150;
         const rollAnimTimes = 10;
 
-        let buyDiePrice = 20;
-        let score = buyDiePrice * 10;
+        let buyDiePrice = 10;
+        let buyDieInflation = 1.05;
+        let score = buyDiePrice;
 
         let scoreShift = new Value(0);
         let sprites = [];
@@ -245,8 +362,17 @@
             die.tilt.tick(delta);
             die.scale.tick(delta);
 
-            if (die.state === IDLE && click && die.bb.contains(cursor)) {
+            if (die.state === IDLE && !die.autoRoll && click && die.bb.contains(cursor)) {
                 die.roll()
+            }
+
+            if (die.state === IDLE && die.autoRoll && (die.acc -= delta) <= 0) {
+                if (--die.anim > 0) {
+                    die.acc += rollAnimDuration;
+                }
+                else {
+                    die.roll();
+                }
             }
 
             if (die.state === ROLLING && (die.acc -= delta) <= 0) {
@@ -261,24 +387,29 @@
                 }
                 else {
                     // done animating
-                    dieScored(die);
-
-                    scoreShift.reset(-40 + rnd(80), 0, rollAnimDuration);
                     die.state = IDLE;
+                    dieScored(die);
+                    scoreShift.reset(-40 + rnd(80), 0, rollAnimDuration);
+
+                    if (die.autoRoll) {
+                        die.anim = rollAnimTimes;
+                        die.acc = 0;
+                    }
                 }
             }
         }
 
         function updateCell(cell, delta) {
-            if (click && !cell.die && cell.bb.contains(cursor) && score >= buyDiePrice) {
-                score -= buyDiePrice;
-                buyDiePrice = (buyDiePrice * 1.2) | 0;
+            const price = Math.pow(buyDiePrice, 1 + cell.dist / 10) | 0;
+            if (click && !cell.die && cell.bb.contains(cursor) && score >= price) {
+                score -= price;
+                buyDiePrice = (buyDiePrice * buyDieInflation) | 0;
                 cell.die = new Die(cell.pos, cellSize);
+                cell.die.roll();
                 click = false;
             }
 
             if (cell.die) updateDie(cell.die, delta);
-
         }
 
         // powerup ideas
@@ -294,48 +425,63 @@
 
         function dieScored(die) {
             let gain = die.value;
-            pop('+' + die.value, die.pos);
+            pop('+' + die.value, die.pos, 0);
 
-            let sameAdj = 0;
             let floor = 0;
+            let squares = 0;
 
-            if (die.cell.neighbors.every(n => n?.die?.value == die.value)) {
-                floor = 3;
-                gain += die.value * 9;
-                pop('Cross of ' + die.value + 's', die.pos);
+            for (let i = TOP; i <= LEFT; ++i) {
+                let sideA = die.cell.neighbors[i]?.die?.value;
+                let sideB = die.cell.neighbors[(i + 1) % (LEFT + 1)]?.die?.value;
+                let diag = die.cell.neighbors[i]?.neighbors[(i + 1) % (LEFT + 1)]?.die?.value;
+
+                if (sideA == sideB && sideB == diag && diag == die.value) {
+                    squares++
+                }
             }
-            
+
+            if (squares > 0) {
+                gain += die.value * squares * 8;
+                floor = 3;
+                pop((squares == 1 ? 'Block' : ['', 'One', 'Two', 'Three', 'Four'][squares] + ' blocks') + ' of ' + die.value + 's', die.pos, 3 + squares * 2);
+            }
+
+            if (squares < 2 && die.cell.neighbors.every(n => n?.die?.value == die.value)) {
+                floor = 2 + squares / 2;
+                gain += die.value * 9;
+                pop('Cross of ' + die.value + 's', die.pos, 6);
+            }
+
             for (let i = TOP; i < BOTTOM; ++i) {
                 let n = die.cell.neighbors[i];
 
-                if (n?.die?.state == IDLE && n?.die?.value == die.value) sameAdj++;
-
                 let s = 0;
-                while (s < 5 && n?.die?.state == IDLE && n?.die?.value == die.value) {
+                while (s < 4 && ((die.edgeBonus && n?.die?.value == null) || n?.die?.value == die.value)) {
                     ++s;
+                    if (die.edgeBonus) break;
                     n = n.neighbors[i];
                 }
 
                 n = die.cell.neighbors[(i + 2) % (LEFT + 1)]
-                if (n?.die?.state == IDLE && n?.die?.value == die.value) sameAdj++;
 
-                while (s < 5 && n?.die?.state == IDLE && n?.die?.value == die.value) {
+                while (s < 4 && ((die.edgeBonus && n?.die?.value == null) || n?.die?.value == die.value)) {
                     ++s;
+                    if (die.edgeBonus && n?.die?.value == null) break;
                     n = n.neighbors[(i + 2) % (LEFT + 1)]
                 }
 
                 if (s > floor) {
                     gain += die.value * (2 * s - 1);
-                    pop([',', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos.add(die.cell.neighbors[i].pos).scale(.5))
+                    pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos.add(die.cell.neighbors[i].pos).scale(.5), s)
                 }
             }
 
             score += gain;
         }
 
-        function pop(text, pos) {
+        function pop(text, pos, level) {
             console.log(text)
-            sprites.push(new Sprite(text, pos, cellSize / 2, -130 + rnd(80), rollAnimDuration * 4));
+            sprites.push(new Sprite(text, pos, cellSize * (.25 + level / 10), -130 + rnd(80), (300 + level * 100) * (95 + rnd(10)) / 100));
         }
 
         function updateSprite(sprite, delta) {
@@ -346,17 +492,43 @@
         function update(delta) {
             scoreShift.tick(delta);
 
+
+            for (let action of actions) {
+                if (!action.shown && score > action.price * 2 / 3) {
+                    action.shown = true;
+                    ui.push(action.button);
+                }
+            }
+
             cells.forEach(cell => updateCell(cell, delta));
             sprites = sprites.filter(sprite => updateSprite(sprite, delta));
 
+            for (let btn of ui) {
+                if (click && btn.bb.contains(cursor.x, cursor.y))
+                    btn.click(btn);
+            }
 
             click = false;
         }
 
+        function toggleMute(btn) {
+            soundOn = !soundOn;
+        }
+
+        function drawMute(btn) {
+            ctx.fillStyle = btn.bb.contains(cursor.x, cursor.y) ? 'white' : 'silver';
+            ctx.font = btn.bb.height + 'pt Georgia';
+
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctext(soundOn ? '🕪' : '🕨', btn.pos.x, btn.pos.y, 0);
+        }
+
+
         function renderDie(die) {
             ctx.save();
 
-            if (die.state == IDLE && die.bb.contains(cursor)) {
+            if (die.state == IDLE && !die.autoRoll && die.bb.contains(cursor)) {
                 ctx.fillStyle = 'white';
                 roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 10);
                 ctx.fill();
@@ -366,15 +538,22 @@
             ctx.rotate(die.tilt.value * deg);
             ctx.scale(die.scale.value, die.scale.value);
 
-            drawDice(ctx, die.value, cellSize, die.rollOthers ? 'blue' : null);
+            drawDice(ctx, die.rollingValue, cellSize,
+                die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : null,
+                die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : null);
+
+            ctx.fillStyle = 'white'
+            if (die.autoRoll && die.state == IDLE) ctext(die.anim, 0, -cellSize / 4, 0)
+
             ctx.restore();
         }
 
         function renderCell(cell) {
             if (!cell.die) {
                 ctx.font = '24pt Georgia'
-                if (score < buyDiePrice) {
-                    ctx.fillStyle = 'grey';
+                const price = Math.pow(buyDiePrice, 1 + cell.dist / 10) | 0;
+                if (score < price) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, .2)';
                 }
                 else if (cell.bb.contains(cursor)) {
                     ctx.fillStyle = 'white';
@@ -382,9 +561,9 @@
                 else {
                     ctx.fillStyle = 'silver'
                 }
-                ctx.fill();
 
-                ctext(buyDiePrice, cell.pos.x, cell.pos.y, 0)
+                ctx.strokeStyle = 'transparent';
+                ctext(price, cell.pos.x, cell.pos.y, 0)
             }
 
             if (cell.die) renderDie(cell.die)
@@ -399,9 +578,10 @@
             ctx.fillStyle = grad
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
-            ctx.font = '32pt Georgia'
-            ctx.fillStyle = 'white'
+            ctx.font = '32pt Georgia';
 
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
             ctext(score, cellSize, cellSize, scoreShift.value * deg)
 
             ctx.save();
@@ -412,10 +592,13 @@
             }
 
             for (let sprite of sprites) {
-                ctx.fillStyle = 'white'
-                ctext(sprite.value, sprite.pos.x - 1, sprite.pos.y + 2, sprite.dir + 90 * deg)
                 ctx.fillStyle = 'black'
+                ctx.strokeStyle = 'white'
                 ctext(sprite.value, sprite.pos.x, sprite.pos.y, sprite.dir + 90 * deg)
+            }
+
+            for (let btn of ui) {
+                btn.draw(btn);
             }
 
             ctx.restore();
@@ -426,6 +609,12 @@
             const w = ctx.measureText(text).width;
             ctx.translate(x, y);
             ctx.rotate(rot);
+
+            ctx.lineWidth = 6;
+            ctx.lineJoin = "round";
+            ctx.miterLimit = 2;
+
+            ctx.strokeText(text, -w / 2, 0);
             ctx.fillText(text, -w / 2, 0)
             ctx.restore()
         }
@@ -481,61 +670,72 @@
             return [can, ctx];
         }
 
-        function drawDice(ctx, value, dieSize, color) {
+        function drawDice(ctx, value, dieSize, color, pipColor) {
+            const c = dieSize / 2;
+
             ctx.save();
-            ctx.translate(-dieSize / 2, -dieSize / 2);
+            ctx.translate(-c, -c);
+
+            // face
             roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
             ctx.fillStyle = color || "#ece5c9";
             ctx.fill()
 
-            roundedRect(ctx, dieSize / 40, +dieSize / 40, dieSize - dieSize / 20, dieSize - dieSize / 20, dieSize / 4);
-            ctx.fillStyle = "rgba(255, 255, 255, .5)";
+            // Face highlight
+            roundedRect(ctx, dieSize / 40, +dieSize / 40, dieSize - c / 10, dieSize - c / 10, dieSize / 4);
+            ctx.fillStyle = color ? "rgba(255, 255, 255, .2)" : "rgba(255, 255, 255, .5)";
             ctx.fill()
 
+            // outline
             roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
             ctx.lineWidth = dieSize / 80;
             ctx.strokeStyle = 'black';
             ctx.stroke();
 
+            // die specular
             ellipse(ctx, dieSize / 9.9, dieSize / 9.9, dieSize / 15, dieSize / 90, Math.PI * 3 / 4);
-
             ctx.fillStyle = "rgb(255, 255, 255, .9)";
             ctx.fill()
 
             const k = 4.5;
-            let r = dieSize / 8;
+            const r = dieSize / 8;
+
+            const s1 = dieSize / k;
+            const s2 = dieSize - s1;
 
             if (value % 2 == 1) {
                 // middle
-                dot(ctx, dieSize / 2, dieSize / 2, r)
+                dot(ctx, c, c, r, pipColor)
             }
 
             if (value > 1) {
                 // corners 1 and 3
-                dot(ctx, dieSize / k, dieSize / k, r)
-                dot(ctx, dieSize - dieSize / k, dieSize - dieSize / k, r)
+                dot(ctx, s1, s1, r, pipColor)
+                dot(ctx, s2, s2, r, pipColor)
             }
 
             if (value > 3) {
                 // corners 2 and 4
-                dot(ctx, dieSize - dieSize / k, dieSize / k, r)
-                dot(ctx, dieSize / k, dieSize - dieSize / k, r)
+                dot(ctx, s2, s1, r, pipColor)
+                dot(ctx, s1, s2, r, pipColor)
             }
 
             if (value == 6) {
                 // mid-sides
-                dot(ctx, dieSize / k, dieSize / 2, r)
-                dot(ctx, dieSize - dieSize / k, dieSize / 2, r)
+                dot(ctx, s1, c, r, pipColor)
+                dot(ctx, s2, c, r, pipColor)
             }
 
             ctx.restore();
         }
 
-        function dot(ctx, x, y, r) {
+        function dot(ctx, x, y, r, color) {
+            // pit
             circle(ctx, x, y, r);
-            ctx.fillStyle = 'black';
+            ctx.fillStyle = color || 'black';
             ctx.fill();
 
+            // pit specular
             ellipse(ctx, x + r / 2, y + r / 2, r / 6, r / 17, Math.PI * 3 / 4);
             ctx.fillStyle = 'white';
             ctx.fill();
