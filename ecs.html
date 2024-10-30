@@ -75,7 +75,7 @@
     </script>
 
     <script type="text/javascript">
-        const tau = Math.PI;
+        const tau = 2 * Math.PI;
         const deg = tau / 360;
         const rad = 1 / deg;
 
@@ -163,7 +163,7 @@
                 const dy = pos.y - oy;
 
                 const a = Math.atan2(dy, dx);
-                const d = 10*Math.log(dx * dx + dy * dy);
+                const d = 10 * Math.log(dx * dx + dy * dy);
 
                 return { x: ox + d * Math.cos(a), y: oy + d * Math.sin(a) };
             }
