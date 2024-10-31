@@ -98,13 +98,13 @@
             }
         }
 
-        function addComponent(name) {
-            const gen = (value) => {
-                return [name, value];
+        function registerComponent(key) {
+            const component = (value) => {
+                return [key, value];
             }
 
-            gen.component = name;
-            return gen;
+            component.key = key;
+            return component;
         }
 
         function addSystem(pool, process, ...components) {
@@ -113,7 +113,7 @@
             const system = {
                 entities,
                 run: (delta) => { for (const e of entities) process(e, delta) },
-                components: components.map(c => c.component),
+                components: components.map(c => c.key),
                 add: (e) => entities.push(e)
             }
 
@@ -122,10 +122,9 @@
         }
 
         // components
-        const position = addComponent('position');
-        const movement = addComponent('movement');
-        const draw = addComponent('draw');
-
+        const position = registerComponent('position');
+        const movement = registerComponent('movement');
+        const draw = registerComponent('draw');
 
         // Loop setup
         function update(delta) {
