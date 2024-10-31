@@ -419,6 +419,9 @@
         const tau = 2 * Math.PI;
         const cos = Math.cos;
         const sin = Math.sin;
+        const abs = Math.abs;
+
+        const e = 1e-6;
 
         const zero = new Point(0, 0);
 
@@ -436,7 +439,7 @@
             colors[i] = hcy2rgb(360 * i / numColors, 1, .5, 1);
 
         let enableLepr = true;
-        let oneOnly = false;
+        let oneOnly = true;
         let showGrid = false;
         let showBalls = false;
 
@@ -445,11 +448,11 @@
         function init() {
             const state = {};
 
-            const rank = 20;
+            const rank = 25;
             const supercell = new SuperCell(0, 0, rank);
             const extremes = supercell.getCorners();
 
-            const maxd = extremes.reduce(function (max, c) { return Math.max(max, dist(zero, c)) }, 0) / 2;
+            const maxd = .93 * extremes.reduce(function (max, c) { return Math.max(max, dist(zero, c)) }, 0) / 2;
             const mind = maxd / 2;
 
             state.minBallDistance = mind;
@@ -489,7 +492,6 @@
                     worldpos: world(gridpos)
                 }
             });
-
             return state;
         }
 
@@ -528,8 +530,8 @@
 
             const store = state.store;
             const paths = oneOnly
-                ? [[.5, colors[(numColors / 2) | 0], new Path2D()]]
-                : colors.map((c, i) => [i / (numColors - 1), c, new Path2D()]);
+                ? [[.5, colors[(numColors / 2) | 0], []]]
+                : colors.map((c, i) => [i / (numColors - 1), c, []]);
 
             function drawCell(cell) {
                 const x = cell.worldpos.x;
@@ -569,9 +571,64 @@
 
             store.forEach(drawCell);
 
+            for (let p of paths) {
+                let path = p[2]
+                for (let i = 0; i < path.length; ++i) {
+                    if (path[i] == null) continue;
+
+                    let head = path[i][0];
+                    let tail = path[i][path[i].length - 1];
+
+                    for (let j = 0; j < path.length; ++j) {
+                        if (i == j || path[j] == null) continue;
+
+                        const h = path[j][0];
+                        const t = path[j][path[j].length - 1];
+
+                        if (close(tail, h)) {
+                            for (let k = 1; k < path[j].length; ++k)path[i].push(path[j][k])
+                            tail = t;
+                            path[j] = null;
+                            i = 0; break
+                        }
+                        else if (close(tail, t)) {
+                            for (let k = path[j].length - 2; k >= 0; --k)path[i].push(path[j][k])
+                            tail = t;
+                            path[j] = null;
+                            i = 0;
+                            i = 0; break
+                        }
+                    }
+                }
+
+                p[2] = path.filter(frag => frag != null)
+            }
+
             for (let [_, color, path] of paths) {
+
                 ctx.strokeStyle = color;
-                ctx.stroke(path);
+                ctx.fillStyle = 'rgba(255,255,255,.1)'
+
+                let h = 0;
+
+                for (let frag of path) {
+                    let start = true;
+                    ctx.beginPath();
+
+                    ctx.strokeStyle = color;
+
+                    for (let [x, y] of frag) {
+                        if (start)
+                            ctx.moveTo(x, y);
+                        else
+                            ctx.lineTo(x, y);
+                        start = false
+                    }
+                    ctx.closePath()
+                    ctx.stroke();
+
+                    ctx.fill();
+                }
             }
 
             if (showBalls) state.balls.forEach(renderBall);
@@ -579,6 +636,10 @@
             ctx.restore();
 
             logFrame();
+        }
+
+        function close(p1, p2) {
+            return abs(p1[0] - p2[0]) < e && abs(p1[1] - p2[1]) < e;
         }
 
         function triangle(ox, oy, a, b, c, t, path, x) {
@@ -597,21 +658,17 @@
             else if (firstOdd(c, a, b)) line(ox, oy, path, x, 2, 3, 0, 3, getk(vb, vc), getk(va, vc));
         }
 
-        function moveTo(path, x, y, a, b, k) {
+        function span(x, y, a, b, k) {
             a = ps[a];
             b = ps[b];
-            path.moveTo(x + a.x + (b.x - a.x) * k, y + a.y + (b.y - a.y) * k);
-        }
-
-        function lineTo(path, x, y, a, b, k) {
-            a = ps[a];
-            b = ps[b];
-            path.lineTo(x + a.x + (b.x - a.x) * k, y + a.y + (b.y - a.y) * k);
+            return [x + a.x + (b.x - a.x) * k, y + a.y + (b.y - a.y) * k];
         }
 
         function line(x, y, path, dk, a1, a2, b1, b2, ka, kb) {
-            moveTo(path, x, y, dk + a1, dk + a2, ka);
-            lineTo(path, x, y, dk + b1, dk + b2, kb);
+            path.push([
+                span(x, y, dk + a1, dk + a2, ka),
+                span(x, y, dk + b1, dk + b2, kb)
+            ])
         }
 
         function getk(v0, v1) {
