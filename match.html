@@ -69,7 +69,7 @@
 
     <script type="text/javascript">
         const sq32 = Math.sqrt(3) / 2;
-        const colors = ["#009e73", "#0072b2", "#56b4e9", "#f0e442", "#e69f00", "#d55e00", "#cc79a7"];
+        const colors = ["#009e73", "#0062b2", "#56c8e9", "#f03442", "#e69f00", "#d55e00", "#cc79a7"];
 
         const ctx = addCanvas();
 
@@ -150,7 +150,7 @@
                 if (j - i > s2 || i - j > s2) row.push(null)
                 else {
                     const [x, y] = transform((j - s2) * sq32, i - (j + s2) / 2);
-                    row.push({ i, j, r: new Damper(.9 * s / 2), pos: new AnchoredPoint(x, y, s / 20), value: rnd(colors), selected: false });
+                    row.push({ i, j, r: new Damper(.9 * s / 2), pos: new AnchoredPoint(x, y, s / 20), value: rnd(colors), selected: false, selectedOn: 0 });
                 }
             }
             grid.push(row)
@@ -171,15 +171,17 @@
         addEventListener('mousedown', () => { cursor.down = true; saveSelected = true });
         addEventListener('mouseup', () => { cursor.down = false; checkMove = true });
 
+        let frame = 0;
+
         loop(60, update, render);
 
         function update(delta) {
+            frame = (frame + 1) % 4592345;
             let closest = null;
             let shortest = Infinity
             for (let row of grid) {
                 for (let cell of row) {
                     if (cell == null) continue;
-                    cell.selected = false;
                     const d = dist(cursor, { x: cell.pos.x.get(), y: cell.pos.y.get() });
 
                     if (d < s && d < shortest) {
@@ -190,9 +192,14 @@
             }
 
             if (closest) {
-                closest.selected = true;
+                closest.selectedOn = frame;
                 closest.pos.target(cursor);
-                closest.r.set(s / 2)
+
+                if (!closest.selected) {
+                    closest.r.set(s / 2)
+                }
+
+                closest.selected = true;
                 if (saveSelected) {
                     selected = closest;
                 }
@@ -201,7 +208,13 @@
             for (let row of grid) {
                 for (let cell of row) {
                     if (cell == null) continue;
-                    if (!cell.selected) { cell.pos.relax(); cell.r.set(.9 * s / 2) }
+
+                    if (cell.selected && cell.selectedOn != frame) {
+                        cell.selected = false;
+                        cell.pos.relax();
+                        cell.r.set(.9 * s / 2)
+                    }
+
                     cell.pos.update(delta)
                     cell.r.update(delta)
                 }
