@@ -8,52 +8,6 @@
 </head>
 
 <body>
-    <script name="color" type="text/javascript">
-
-        function hcy2rgb(h, c, y) {
-            // 601
-            const r = .3;
-            const g = .59;
-            const b = .11;
-
-            const h0 = h;
-            h /= 60;
-
-            const k = (1 - Math.abs((h % 2) - 1));
-
-            const K = h < 1 ? r + k * g
-                : h < 2 ? g + k * r
-                    : h < 3 ? g + k * b
-                        : h < 4 ? b + k * g
-                            : h < 5 ? b + k * r
-                                : r + k * b;
-
-            let cmax = 1;
-
-            if (y <= 0 || y >= 1) cmax = 0;
-            else cmax *= K < y ? (y - 1) / (K - 1) : K > y ? y / K : 1;
-            c = Math.min(c, cmax);
-
-            const x = c * k;
-            const rgb = h < 1 ? [c, x, 0]
-                : h < 2 ? [x, c, 0]
-                    : h < 3 ? [0, c, x]
-                        : h < 4 ? [0, x, c]
-                            : h < 5 ? [x, 0, c]
-                                : [c, 0, x];
-
-            const m = y - (r * rgb[0] + g * rgb[1] + b * rgb[2]);
-
-            const rgbdata = [rgb[0] + m, rgb[1] + m, rgb[2] + m];
-            return [(rgbdata[0] * 255) | 0, (rgbdata[1] * 255) | 0, (rgbdata[2] * 255) | 0];
-        }
-
-        function stringColor(tuple) {
-            return `rgb(${tuple[0]}, ${tuple[1]}, ${tuple[2]})`;
-        }
-
-    </script>
-
     <script name="canvas" type="text/javascript">
         function addCanvas(w, h) {
             const canvas = document.createElement('canvas');
@@ -93,7 +47,7 @@
 
                 while (time > targetDelay) {
                     time -= targetDelay;
-                    update();
+                    update(targetDelay);
                     doRender = true;
 
                     if (++numLoops > 50) {
@@ -127,13 +81,76 @@
         const s = .9 * h / size;
         const s2 = (size / 2 | 0);
 
+        class Damper {
+            constructor(current, time) {
+                this.origin = current;
+                this.target = current;
+                this.time = time || 500;
+                this.acc = this.time;
+            }
+
+            get() {
+                if (this.acc >= this.time) return this.target;
+                const k = Math.min(1, this.acc / this.time);
+                return this.origin + (this.target - this.origin) * fade(.5 + k / 2);
+            }
+
+            set(target) {
+                this.origin = this.get();
+                this.target = target;
+                this.acc = 0;
+            }
+
+            update(delta) {
+                if (this.acc >= this.time) return;
+                this.acc += delta;
+            }
+        }
+
+        class AnchoredPoint {
+            constructor(x, y, limit, time) {
+                this.initial = { x, y };
+                this.x = new Damper(x, time);
+                this.y = new Damper(y, time);
+                this.limit = limit;
+                this.relaxed = true;
+            }
+
+            relax() {
+                if (this.relaxed) return;
+                this.relaxed = true;
+                this.x.set(this.initial.x);
+                this.y.set(this.initial.y);
+            }
+
+            target(pos) {
+                this.relaxed = false;
+                let dx = pos.x - this.initial.x;
+                let dy = pos.y - this.initial.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist > this.limit) {
+                    dx *= this.limit / dist;
+                    dy *= this.limit / dist;
+                }
+
+                this.x.set(this.initial.x + dx)
+                this.y.set(this.initial.y + dy)
+            }
+
+            update(delta) {
+                this.x.update(delta);
+                this.y.update(delta);
+            }
+        }
+
         for (let i = 0; i < size; ++i) {
             const row = []
             for (let j = 0; j < size; ++j) {
                 if (j - i > s2 || i - j > s2) row.push(null)
                 else {
                     const [x, y] = transform((j - s2) * sq32, i - (j + s2) / 2);
-                    row.push({ i, j, x, y, value: rnd(colors), selected: false });
+                    row.push({ i, j, r: new Damper(.9 * s / 2), pos: new AnchoredPoint(x, y, s / 20), value: rnd(colors), selected: false });
                 }
             }
             grid.push(row)
@@ -142,27 +159,29 @@
         const strings = [...rows(), ...cols(), ...altRows()];
 
         const cursor = { x: 0, y: 0, down: false }
+        let positionUpdated = true;
+        let saveSelected = false;
+        let selected = null;
+
         addEventListener('mousemove', e => {
             cursor.x = e.clientX;
             cursor.y = e.clientY;
         });
         addEventListener('mouseleave', () => cursor.down = false);
-        let positionUpdated = true;
-        let saveSelected = false;
-        let selected = null;
         addEventListener('mousedown', () => { cursor.down = true; saveSelected = true });
         addEventListener('mouseup', () => { cursor.down = false; checkMove = true });
 
         loop(60, update, render);
 
-        function update() {
+        function update(delta) {
             let closest = null;
             let shortest = Infinity
             for (let row of grid) {
                 for (let cell of row) {
                     if (cell == null) continue;
                     cell.selected = false;
-                    const d = dist(cursor, cell);
+                    const d = dist(cursor, { x: cell.pos.x.get(), y: cell.pos.y.get() });
+
                     if (d < s && d < shortest) {
                         shortest = d;
                         closest = cell
@@ -172,8 +191,19 @@
 
             if (closest) {
                 closest.selected = true;
+                closest.pos.target(cursor);
+                closest.r.set(s / 2)
                 if (saveSelected) {
                     selected = closest;
+                }
+            }
+
+            for (let row of grid) {
+                for (let cell of row) {
+                    if (cell == null) continue;
+                    if (!cell.selected) { cell.pos.relax(); cell.r.set(.9 * s / 2) }
+                    cell.pos.update(delta)
+                    cell.r.update(delta)
                 }
             }
 
@@ -262,16 +292,21 @@
             saveSelected = false;
         }
 
+        function circle(ctx, x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.closePath();
+        }
+
         function render() {
             ctx.clearRect(0, 0, w, h)
             for (let row of grid) {
                 for (let cell of row) {
                     if (cell == null) continue;
 
+                    circle(ctx, cell.pos.x.get(), cell.pos.y.get(), cell.r.get())
                     ctx.fillStyle = cell.value;
-                    ctx.beginPath();
-                    ctx.arc(cell.x, cell.y, s / 2, 0, 2 * Math.PI);
-                    ctx.closePath();
+
                     ctx.fill();
 
                     if (cell.selected) {
@@ -283,17 +318,12 @@
 
                         let c = ((cell.exploding * 50) % 255).toString(16).padStart(2, '0');
 
+                        circle(ctx, cell.pos.x.get(), cell.pos.y.get(), s / 5)
                         ctx.fillStyle = '#' + c + c + c;
-
-                        ctx.beginPath();
-                        ctx.arc(cell.x, cell.y, s / 5, 0, 2 * Math.PI);
-                        ctx.closePath();
                         ctx.fill();
                     }
                 }
             }
-
-            throw 'done'
         }
 
         function transform(x, y) {
@@ -320,7 +350,6 @@
                     return Math.random();
             }
         }
-
 
         function rows() {
             const sets = []
@@ -368,6 +397,9 @@
 
             return sets;
         }
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
     </script>
 </body>
 
