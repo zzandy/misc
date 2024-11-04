@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Pachi</title>
+    <script src="matter.min.js"></script>
+    <style>
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0
+        }
+    </style>
+</head>
+
+<body>
+    <script type="text/javascript">
+        // module aliases
+        const { Engine, Render, Runner, Bodies, Composite, Events } = Matter;
+
+        // create an engine
+        const engine = Engine.create();
+
+        const [w, h] = [innerWidth, innerHeight];
+
+        const defaults = { restitution: .7, friction: 0, frictionStatic: 0, frictionAir: 0, density: .5 }
+
+        // create a renderer
+        const render = Render.create({
+            element: document.body,
+            engine: engine,
+            options: {
+                width: w,
+                height: h,
+                wireframes: false
+            },
+        });
+
+        // create two boxes and a ground
+        const ground = Bodies.rectangle(w / 2, h, 2 * w, 60, { isStatic: true, isSensor: true, render: { visible: false } });
+
+        let bodies = [ground];
+
+        let s = 100;
+        let numRows = 3 * h / 4 / s;
+        const sq32 = Math.sqrt(3) / 2
+        let soundOn = true;
+
+        let score = 0;
+
+        const sounds = [];
+        function sound() { }
+        setupSound();
+
+
+        const colors = ['blue', 'purple', 'red', 'orange', 'yellow', 'white']
+
+        for (let i = 0; i < numRows; ++i) {
+            for (let j = 0; j < w / s; ++j)
+                bodies.push(Bodies.circle(s * (j + .5 * (i % 2)), h / 5 + i * s * sq32, s / 30, { isStatic: true, ...defaults, level: 0 }))
+        }
+
+        Events.on(engine, 'collisionStart', function (event) {
+            for (const pair of event.pairs) {
+                const other = pair.bodyA == ground ? pair.bodyB : pair.bodyB == ground ? pair.bodyA : null;
+                if (!other) {
+                    sound();
+
+                    score += 200;
+
+                    let static = pair.bodyA.isStatic ? pair.bodyA : pair.bodyB
+
+
+                    static.render.fillStyle = colors[Math.min(static.level++, colors.length - 1)];
+                    static.render.strokeStyle = 'transparent'
+
+                    continue;
+                }
+                spawn();
+                Composite.remove(engine.world, other);
+            }
+        });
+
+
+        Events.on(render, 'afterRender', function () {
+            const ctx = render.context;
+
+            ctx.fillStyle = 'white'
+            ctx.fillText(score, 20, 20);
+
+            // Render.startViewTransform(render);
+            // Render.endViewTransform(render);
+        });
+
+        spawn();
+
+        function spawn() {
+            Composite.add(engine.world, [Bodies.circle(s * (w / s | 0) / 2 + s / 3 * (Math.random() - .5), s, s / 5, defaults, 30)]);
+        }
+
+        // add all of the bodies to the world
+        Composite.add(engine.world, bodies);
+
+        // run the renderer
+        Render.run(render);
+
+        // create runner
+        var runner = Runner.create();
+
+        // run the engine
+        Runner.run(runner, engine);
+
+        function setupSound() {
+
+            let assets = ['assets/bell (1).mp3'];
+
+            let lastSound = 0;
+            const reps = 24;
+
+            for (const asset of assets) {
+                const row = [1];
+                for (let j = 0; j < reps; ++j) {
+                    const a = new Audio(asset)
+                    a.volume = .3
+                    if (rnd(100) < 5) {
+                        a.playbackRate = .95 + .1 * Math.random()
+                        a.preservesPitch = false;
+                    }
+                    row.push(a);
+                }
+                sounds.push(row);
+            }
+
+            sound = function () {
+                if (!soundOn) return;
+
+                const s = sounds[lastSound][sounds[lastSound][0]];
+
+                if (!s) console.log(lastSound, sounds[lastSound][0])
+
+                if (++sounds[lastSound][0] >= reps) sounds[lastSound][0] = 1;
+                setTimeout(() => { s.play(); setTimeout(() => { s.pause(); s.fastSeek(0) }, 410) }, 5 + rnd(20));
+
+                lastSound = (lastSound + rnd(assets.length / 2)) % assets.length
+            }
+        }
+
+        function rnd(a) {
+            return a instanceof Array ? a[rnd(a.length)] : ((a * Math.random()) | 0)
+        }
+    </script>
+</body>
+
+</html>
