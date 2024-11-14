@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" style="background-color: white;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Running</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        function addCanvas(w, h) {
+            const canvas = document.createElement('canvas');
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            canvas.style.position = 'absolute';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+
+            document.body.appendChild(canvas);
+
+            return canvas.getContext('2d', { alpha: false });
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(fps, update, render) {
+
+            let targetDelay = 1000 / fps;
+
+            let time = targetDelay + 1;
+
+            let doRender = true;
+
+            let then = performance.now();
+
+            requestAnimationFrame(frame);
+
+            function frame() {
+                let now = performance.now();
+                time += now - then;
+                then = now;
+
+                let numLoops = 0;
+
+                while (time > targetDelay) {
+                    time -= targetDelay;
+                    update(targetDelay);
+                    doRender = true;
+
+                    if (++numLoops > 50) {
+                        console.log('overload')
+                        time = 0;
+                        break;
+                    }
+                }
+
+                if (doRender) {
+                    doRender = false;
+                    render();
+                }
+
+                requestAnimationFrame(frame);
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
+        const tau = Math.PI * 2;
+        const { cos, sin, max, min, atan2, sign, abs, sqrt } = Math;
+        const ctx = addCanvas();
+
+        ctx.strokeCircle = function (x, y, r) {
+            this.beginPath();
+            this.arc(x, y, r, 0, tau);
+            this.closePath();
+            this.stroke();
+        }
+
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        class Vec {
+            constructor(x, y) { this.x = x; this.y = y }
+
+            add(vec, y) {
+                if (y !== undefined) return new Vec(this.x + vec, this.y + y)
+                return new Vec(this.x + vec.x, this.y + vec.y)
+            }
+
+            mul(s) {
+                return new Vec(this.x * s, this.y * s)
+            }
+        }
+
+        class Vel {
+            constructor(a, m) {
+                this.a = a;
+                this.m = m;
+            }
+
+            get x() {
+                return this.m * cos(this.a);
+            }
+
+            get y() {
+                return this.m * sin(this.a);
+            }
+        }
+
+        class AABB {
+            constructor(origin, size) { this.origin = origin; this.size = size }
+
+            contains(vec) {
+                return vec.x >= this.origin.x && vec.y >= this.origin.y && vec.x <= this.origin.x + this.size.x && vec.y <= this.origin.y + this.size.y
+            }
+
+            overlaps(other) {
+                const x = this.origin.x;
+                const y = this.origin.y;
+                const w = this.size.x;
+                const h = this.size.y;
+
+                return x <= other.origin.x + other.size.x && x + w >= other.origin.x && y <= other.origin.y + other.size.y && y + h >= other.origin.y
+            }
+        }
+
+        const maxLeaves = 4;
+        class QuadTree {
+            constructor(extent) {
+                this.extent = extent;
+
+                this.leaves = [];
+                this.branches = [];
+            }
+
+            near(pos, r) {
+                let bb = new AABB(pos.add(-r, -r), new Vec(2 * r, 2 * r));
+
+                if (!this.extent.overlaps(bb)) return [];
+
+                const matches = [];
+
+                for (const leaf of this.leaves) {
+                    if (dist(pos, leaf.pos) <= r) matches.push(leaf)
+                }
+
+                for (const branch of this.branches) {
+                    matches.push(...branch.near(pos, r))
+                }
+
+                return matches;
+            }
+
+            add(obj) {
+                if (!this.extent.contains(obj.pos)) return false;
+
+                if (this.branches.length === 0) {
+                    if (this.leaves.length == maxLeaves) {
+                        const size = this.extent.size.mul(.5);
+                        const origin = this.extent.origin;
+
+                        this.branches = [
+                            new QuadTree(new AABB(origin, size)),
+                            new QuadTree(new AABB(origin.add(size.x, 0), size)),
+                            new QuadTree(new AABB(origin.add(0, size.x), size)),
+                            new QuadTree(new AABB(origin.add(size), size)),
+                        ]
+
+                        for (let leaf of this.leaves) this.branches.forEach(b => b.add(leaf));
+                        this.leaves.length = 0;
+                    }
+                    else {
+                        this.leaves.push(obj);
+                        return true;
+                    }
+                }
+
+                return this.branches.some(b => b.add(obj));
+            }
+
+            drop(pos) {
+
+            }
+
+            forEach(callback) {
+                this.leaves.forEach((obj) => callback(obj));
+                this.branches.forEach(b => b.forEach(callback));
+            }
+        }
+
+        class Mover {
+            constructor(pos, vel) {
+                this.pos = pos;
+                this.vel = vel;
+            }
+        }
+
+        class Bullet extends Mover {
+            constructor(pos, vel, dmg) {
+                supet(pos, vel)
+            }
+        }
+
+        class Agent extends Mover {
+            constructor(pos, vel, hp) {
+                super(pos, vel);
+                this.hp = hp;
+            }
+        }
+
+        let field = new QuadTree(new AABB(new Vec(0, 0), new Vec(w, w)))
+        const bullets = [];
+        const explosions = [];
+
+        for (let i = 0; i < 20; ++i) {
+            const point = new Vec(rnd(w), rnd(h))
+
+            for (let j = 0; j < 5 + rnd(30); ++j) {
+                const p = point.add(-20 + rnd(40), -20 + rnd(40))
+                const agent = new Agent(p, new Vel(rnd(tau), (20 + rnd(10)) / 10), 100)
+
+                field.add(agent);
+            }
+        }
+
+        const cursor = new Vec(-1, -1);
+        addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX; cursor.y = clientY })
+
+        loop(60, update, render);
+
+        function update(delta) {
+            bullets.forEach(moveAndHit);
+            const newField = new QuadTree(field.extent);
+
+            field.forEach(o => {
+                move(o);
+                newField.add(o)
+            });
+
+            field = newField;
+        }
+
+        function moveAndHit(bullet) {
+            move(bullet);
+
+            const hit = field.near(bullet.pos, 5)[0];
+            if (hit) field.drop(hit.pos);
+        }
+
+        function move(mover) {
+            updateVelocity(mover.pos, mover.vel);
+            mover.pos = mover.pos.add(mover.vel.x, mover.vel.y)
+        }
+
+        function updateVelocity(pos, vel) {
+
+            const margin = 50;
+
+            let n = field.near(pos, 2 * margin);
+
+            let dx = vel.x;
+            let dy = vel.y;
+
+            const k = .3;
+
+            let odx = 0;
+            let ody = 0;
+
+            n.forEach(other => {
+                const q = dist(other.pos, pos) / margin;
+
+                odx += q * other.vel.x;
+                ody += q * other.vel.y;
+
+                dx -= k * (other.pos.x - pos.x) * force(q * 2);
+                dy -= k * (other.pos.y - pos.y) * force(q * 2);
+            });
+
+            vel.a = atan2((5 * dy + ody) / 6, (5 * dx + odx) / 6);
+            vel.m = (vel.m * 3 + sqrt(ody * ody + odx * odx)) / 4
+            dx = vel.x;
+            dy = vel.y;
+
+            // repell from edges
+            dx += 5 * k * force(pos.x / margin);
+            dx -= 5 * k * force((w - pos.x) / margin);
+            dy += 5 * k * force(pos.y / margin);
+            dy -= 5 * k * force((h - pos.y) / margin);
+
+            // repell from cursor
+            const q = dist(cursor, pos) / margin / 5;
+            dx -= k * (cursor.x - pos.x) * force(q);
+            dy -= k * (cursor.y - pos.y) * force(q);
+
+            vel.a = atan2(dy, dx);
+            vel.m = min(5, Math.sqrt(dx * dx + dy * dy));
+        }
+
+        function dist(a, b) {
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function render() {
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'red';
+            ctx.clearRect(0, 0, w, h)
+
+            ctx.strokeCircle(cursor.x, cursor.y, 20);
+
+            renderQuad(field);
+        }
+
+        function renderQuad(quad) {
+            // if (quad.leaves.length || quad.branches.length) { ctx.strokeRect(quad.extent.origin.x, quad.extent.origin.y, quad.extent.size.x, quad.extent.size.y); }
+            // else {
+            //     ctx.fillStyle = 'rgba(255, 0, 0, 10%)'
+            //     ctx.fillRect(quad.extent.origin.x, quad.extent.origin.y, quad.extent.size.x, quad.extent.size.y);
+            // }
+
+            for (let branch of quad.branches) renderQuad(branch)
+
+            ctx.fillStyle = 'white'
+            for (let leaf of quad.leaves) {
+                ctx.fillStyle = leaf.color;
+                ctx.fillRect(leaf.pos.x - 1, leaf.pos.y - 1, 3, 3)
+            }
+        }
+
+        function circle(ctx, x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.closePath();
+        }
+
+        function rnd() {
+            switch (arguments.length) {
+                case 1:
+                    if (arguments[0] instanceof Array)
+                        return arguments[0][Math.floor(Math.random() * arguments[0].length)];
+                    else return (arguments[0] * Math.random()) | 0;
+                case 2:
+                    return (arguments[0] + Math.random() * (arguments[1] - arguments[0])) | 0;
+                case 0:
+                default:
+                    return Math.random();
+            }
+        }
+
+
+        function clip(v) {
+            return min(1, max(-1, v));
+        }
+
+        function force(v) {
+            const s = v < 0 ? -1 : 1;
+            return s * min(1000, 1 / clip(abs(v)) - 1)
+        }
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
+    </script>
+</body>
+
+</html>
