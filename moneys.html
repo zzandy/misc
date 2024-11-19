@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Moneys</title>
+    <script src="lightue.min.js"></script>
+    <style>
+
+    </style>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        function addCanvas() {
+            const canvas = document.createElement('canvas');
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            canvas.style.position = 'absolute';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+
+            document.body.appendChild(canvas);
+
+            return canvas.getContext('2d', { alpha: false });
+        }
+    </script>
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script type="text/javascript">
+        (() => {
+            const { useState, button, div, span } = Lightue;
+            const { min, max, sqrt, abs } = Math;
+
+            const ctx = addCanvas();
+            const { width: w, height: h } = ctx.canvas;
+
+            class Point {
+                constructor(x, y) {
+                    this.x = x;
+                    this.y = y;
+                }
+
+                add(p) {
+                    return new Point(this.x + p.x, this.y + p.y);
+                }
+
+                sub(p) {
+                    return new Point(this.x - p.x, this.y - p.y);
+                }
+
+                times(v) {
+                    return new Point(this.x * v, this.y * v);
+                }
+            }
+
+            class AABB {
+                constructor(x, y, w, h) {
+                    this.x = x;
+                    this.y = y;
+                    this.w = w;
+                    this.h = h;
+                }
+
+                contains(point) {
+                    return this.x <= point.x
+                        && this.y <= point.y
+                        && this.x + this.w >= point.x
+                        && this.y + this.h >= point.y
+                }
+            }
+
+            class Polygon {
+                constructor(points) {
+                    this.points = [...points];
+
+                    const { x0, x1, y0, y1 } = this.points.reduce((limits, point) => ({
+                        x0: min(limits.x0, point.x),
+                        x1: max(limits.x1, point.x),
+                        y0: min(limits.y0, point.y),
+                        y1: max(limits.y1, point.y)
+                    }),
+                        {
+                            x0: Infinity,
+                            x1: -Infinity,
+                            y0: Infinity,
+                            y1: -Infinity
+                        });
+
+                    // bounding box
+                    this.bb = new AABB(x0, y0, x1 - x0, y1 - y0)
+                }
+
+                contains(p) {
+                    if (!this.bb.contains(p))
+                        return false;
+
+                    let p0 = this.points.at(-1);
+                    let isInside = false;
+
+                    for (let p1 of this.points) {
+                        if ((p0.y > p.y) != (p1.y > p.y) && p.x < (p0.x - p1.x) * (p.y - p1.y) / (p0.y - p1.y) + p1.x)
+                            isInside = !isInside;
+
+                        p0 = p1;
+                    }
+
+                    return isInside;
+                }
+            }
+
+            function cross(a, b) { return a.x * b.y - a.y * b.x; }
+
+            function bilinear(uv, a, b, c, d) {
+                const p = a.add(b.sub(a).times(uv.x))
+                const q = d.add(c.sub(d).times(uv.x))
+                return p.add(q.sub(p).times(uv.y))
+            }
+
+            function invBilinear(p, a, b, c, d) {
+                let res = new Point(-1, -1);
+
+                const e = b.sub(a);
+                const f = d.sub(a);
+                const g = a.sub(b).add(c).sub(d);
+                const h = p.sub(a);
+
+                const k2 = cross(g, f);
+                const k1 = cross(e, f) + cross(h, g);
+                const k0 = cross(h, e);
+
+                // if edges are parallel, this is a linear equation
+                if (abs(k2) < 0.001) {
+                    res = new Point((h.x * k1 + f.x * k0) / (e.x * k1 - g.x * k0), -k0 / k1);
+                }
+                // otherwise, it's a quadratic
+                else {
+                    let w = k1 * k1 - 4.0 * k0 * k2;
+                    if (w < 0) return new Point(-1, -1);
+                    w = sqrt(w);
+
+                    const ik2 = 0.5 / k2;
+                    let v = (-k1 - w) * ik2;
+                    let u = (h.x - f.x * v) / (e.x + g.x * v);
+
+                    if (u < 0 || u > 1 || v < 0 || v > 1) {
+                        v = (-k1 + w) * ik2;
+                        u = (h.x - f.x * v) / (e.x + g.x * v);
+                    }
+                    res = new Point(u, v);
+                }
+
+                return res;
+            }
+
+            // each block is a list of corners
+            const blocks = [];
+
+            function populate(ox, oy, w, h) {
+
+                const canSplit = 500;
+
+
+                ctx.strokeRect(ox, oy, w, h)
+                const split = rnd(2);
+
+
+                if (w < canSplit && h < canSplit) {
+                    addBlocs(3 + rnd(3), 3 + rnd(3), ox, oy, w, h, 6 + rnd(6));
+                    return;
+                }
+
+                if ((split == 0 || w < canSplit) && h > canSplit) {
+                    const nh = canSplit / 2 + max(0, rnd(h - canSplit));
+                    populate(ox, oy, w, nh)
+                    populate(ox, oy + nh, w, h - nh)
+                    return;
+                }
+
+                if ((split == 1 || h < canSplit) && w > canSplit) {
+                    const nw = canSplit / 2 + max(0, rnd(w - canSplit));
+                    populate(ox, oy, nw, h);
+                    populate(ox + nw, oy, w - nw, h);
+                    return;
+                }
+
+                throw 'error'
+            }
+
+            populate(0, 0, w, h);
+
+            const gn = 3; const gm = 4;
+            const grid = [];
+            const wob = h/gn/2;
+            for (let i = 0; i <= gn; ++i) {
+                const r = [];
+                for (let j = 0; j <= gm; ++j) {
+                    const p = new Point(j * w / gm, i * h / gn)
+                    const pm = new Point(p.x - (j < gm ? wob / 2 : 0) + rnd(j > 0 && j < gm ? wob : wob / 2), 
+                    p.y - (i < gn ? wob/2 : 0) + rnd(i > 0 && j < gn ? wob : wob / 2))
+                    r.push([p, pm]);
+                }
+
+                grid.push(r);
+            }
+
+            for (let i = 1; i < grid.length; ++i)
+                for (let j = 1; j < grid[i].length; ++j)
+                    distort([grid[i - 1][j - 1][0], grid[i - 1][j][0], grid[i][j][0], grid[i][j - 1][0]],
+                        [grid[i - 1][j - 1][1], grid[i - 1][j][1], grid[i][j][1], grid[i][j - 1][1]])
+
+            function addBlocs(n, m, ox, oy, wid, hei, gap) {
+                const bw = wid / m;
+                const bh = hei / n;
+                let li = rnd(n - 1);
+                let lj = rnd(m - 1);
+                let ld = rnd(2);
+                for (let i = 0; i < n; ++i) {
+                    for (let j = 0; j < m; ++j) {
+
+                        if (ld == 0 && i == li && j == lj + 1 || ld == 1 && i == li + 1 && j == lj) continue;
+
+                        const a = ox + j * bw + gap / 2;
+                        const b = oy + i * bh + gap / 2;
+                        const c = bw - gap + ((i == li && j == lj && ld == 0) ? bw : 0);
+                        const d = bh - gap + ((i == li && j == lj && ld == 1) ? bh : 0);
+
+                        blocks.push([new Point(a, b), new Point(a + c, b), new Point(a + c, b + d), new Point(a, b + d)])
+                    }
+                }
+            }
+
+            function distort(rect1, rect2) {
+                let original = new Polygon(rect1);
+
+                // 1. split all lines intersecting with the rect1
+
+
+
+                // 2. for every point inside rect1 transform it's coordinates
+                for (let block of blocks) {
+                    for (let point of block) {
+                        if (!original.contains(point)) continue;
+
+                        const uv = invBilinear(point, ...rect1);
+                        const p = bilinear(uv, ...rect2);
+                        point.x = p.x;
+                        point.y = p.y;
+                    }
+                }
+            }
+
+            const state = useState({
+
+            });
+            console.log(grid)
+            loop(60, delta => {
+
+            }, () => {
+                ctx.fillStyle = '#000';
+                ctx.strokeStyle = '#bbb';
+
+                ctx.fillRect(0, 0, w, h);
+
+
+
+                ctx.save();
+                ctx.translate(50, 50);
+                ctx.scale(.7, .7)
+
+                ctx.strokeStyle = 'amber'
+                for (let i = 1; i < grid.length; ++i)
+                    for (let j = 1; j < grid[i].length; ++j)
+                        drawPolygon(grid[i - 1][j - 1][0], grid[i - 1][j][0], grid[i][j][0], grid[i][j - 1][0])
+                ctx.strokeStyle = 'orange'
+                for (let i = 1; i < grid.length; ++i)
+                    for (let j = 1; j < grid[i].length; ++j)
+                        drawPolygon(grid[i - 1][j - 1][1], grid[i - 1][j][1], grid[i][j][1], grid[i][j - 1][1])
+
+
+                ctx.strokeStyle = 'silver'
+                for (let block of blocks) drawPolygon(...block)
+
+                ctx.restore();
+            });
+
+            function drawPolygon({ x, y }, ...rest) {
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                for (const { x, y } of rest)
+                    ctx.lineTo(x, y);
+                ctx.closePath();
+                ctx.stroke();
+            }
+
+            Lightue({
+
+            });
+
+        })();
+
+        function rnd() {
+            switch (arguments.length) {
+                case 1:
+                    if (arguments[0] instanceof Array)
+                        return arguments[0][Math.floor(Math.random() * arguments[0].length)];
+                    else return (arguments[0] * Math.random()) | 0;
+                case 2:
+                    return (arguments[0] + Math.random() * (arguments[1] - arguments[0])) | 0;
+                case 0:
+                default:
+                    return Math.random();
+            }
+        }
+    </script>
+</body>
+
+</html>

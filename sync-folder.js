@@ -51,15 +51,14 @@ async function run() {
 
         if (base.length == 0) console.log('added ' + changed.join('\n    '));
         else if (changed.length == 0) console.log('deleted ' + base.join('\n    '))
-
+        else {
+            if (changed.map(x => x.replace(/^[^\\]+/, '')).join(';') != base.map(x => x.replace(/^[^\\]+/, '')).join(';')) console.log('moved ' + base.join(';') + ' to ' + changed.join(';'))
+        }
     }
-
 }
 
 function add(hash, source, target) {
-
     const x = files.get(hash) || { base: [], changed: [] };
-
 
     if (!files.has(hash)) files.set(hash,);
 
