@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <title>Moneys</title>
+    <title>Moneies</title>
     <script src="lightue.min.js"></script>
     <style>
 
@@ -181,6 +181,26 @@
                 return res;
             }
 
+            function getIntersection([p1, p2], [p3, p4]) {
+
+                const denominator = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
+
+                if (denominator === 0) {
+                    return null; // lines are parallel
+                }
+
+                const t = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / denominator;
+                const u = -((p2.x - p1.x) * (p3.y - p1.y) - (p2.y - p1.y) * (p3.x - p1.x)) / denominator;
+
+                if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+                    const x = p1.x + t * (p2.x - p1.x);
+                    const y = p1.y + t * (p2.y - p1.y);
+                    return new Point(x, y);
+                }
+
+                return null; // no intersection
+            }
+
             // each block is a list of corners
             const blocks = [];
 
@@ -188,10 +208,8 @@
 
                 const canSplit = 500;
 
-
                 ctx.strokeRect(ox, oy, w, h)
                 const split = rnd(2);
-
 
                 if (w < canSplit && h < canSplit) {
                     addBlocs(3 + rnd(3), 3 + rnd(3), ox, oy, w, h, 6 + rnd(6));
@@ -219,13 +237,13 @@
 
             const gn = 3; const gm = 4;
             const grid = [];
-            const wob = h/gn/2;
+            const wob = h / gn / 2;
             for (let i = 0; i <= gn; ++i) {
                 const r = [];
                 for (let j = 0; j <= gm; ++j) {
                     const p = new Point(j * w / gm, i * h / gn)
-                    const pm = new Point(p.x - (j < gm ? wob / 2 : 0) + rnd(j > 0 && j < gm ? wob : wob / 2), 
-                    p.y - (i < gn ? wob/2 : 0) + rnd(i > 0 && j < gn ? wob : wob / 2))
+                    const pm = new Point(p.x - (j < gm ? wob / 2 : 0) + rnd(j > 0 && j < gm ? wob : wob / 2),
+                        p.y - (i < gn ? wob / 2 : 0) + rnd(i > 0 && j < gn ? wob : wob / 2))
                     r.push([p, pm]);
                 }
 
@@ -233,9 +251,12 @@
             }
 
             for (let i = 1; i < grid.length; ++i)
-                for (let j = 1; j < grid[i].length; ++j)
+                for (let j = 1; j < grid[i].length; ++j) {
+                    cut([grid[i - 1][j - 1][0], grid[i - 1][j][0], grid[i][j][0], grid[i][j - 1][0]],
+                        [grid[i - 1][j - 1][1], grid[i - 1][j][1], grid[i][j][1], grid[i][j - 1][1]])
                     distort([grid[i - 1][j - 1][0], grid[i - 1][j][0], grid[i][j][0], grid[i][j - 1][0]],
                         [grid[i - 1][j - 1][1], grid[i - 1][j][1], grid[i][j][1], grid[i][j - 1][1]])
+                }
 
             function addBlocs(n, m, ox, oy, wid, hei, gap) {
                 const bw = wid / m;
@@ -258,13 +279,25 @@
                 }
             }
 
+            function cut(rect1, rect2) {
+                // 1. split all lines intersecting with the rect1
+                for (let block of blocks) {
+                    const inserts = [];
+                    for (let i = 0; i < block.length; ++i) {
+                        for (let j = 0; j < rect1.length; ++j) {
+                            let intersection = getIntersection([block[i], block[(i + 1) % block.length]], [rect1[j], rect1[(j + 1) % rect1.length]])
+                            if (intersection) {
+                                inserts.unshift([i, intersection]);
+                            }
+                        }
+                    }
+
+                    for (const [index, point] of inserts) block.splice(index + 1, 0, point);
+                }
+            }
+
             function distort(rect1, rect2) {
                 let original = new Polygon(rect1);
-
-                // 1. split all lines intersecting with the rect1
-
-
-
                 // 2. for every point inside rect1 transform it's coordinates
                 for (let block of blocks) {
                     for (let point of block) {
@@ -281,7 +314,7 @@
             const state = useState({
 
             });
-            console.log(grid)
+
             loop(60, delta => {
 
             }, () => {
@@ -289,8 +322,6 @@
                 ctx.strokeStyle = '#bbb';
 
                 ctx.fillRect(0, 0, w, h);
-
-
 
                 ctx.save();
                 ctx.translate(50, 50);

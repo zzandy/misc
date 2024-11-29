@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Moneies</title>
+    <script src="lightue.min.js"></script>
+    <style>
+        .grid {
+            display: grid;
+        }
+
+        .ave,
+        .st {
+            background-color: oklch(100% 30% 110);
+        }
+
+        .corner {
+            background-color: oklch(90% 50% 100);
+        }
+
+        .ave {
+            writing-mode: vertical-lr
+        }
+
+        .st {}
+
+        .block {
+            border: 1px solid silver
+        }
+    </style>
+</head>
+
+<body>
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script type="text/javascript">
+        (() => {
+            const { useState, button, div, span } = Lightue;
+            const { min, max, sqrt, abs } = Math;
+
+            // get a list of corners with parameters like threat level, traffic, police threat, status (free/occupied)
+            // offer a choise of two or three to occupy
+
+
+            const strs = 'Jefferson,Washington,Grant,Fort,Bank,Lexingon,Calvert,Fleet,St Paul,Bell,Barksdale,Devon,Stanfield,Russel'.split(',');
+            const aves = 'Bay Drive,Green Mount,51st,57th,59th,61st,65th,72nd,73rd,78th,80th,84th,86th'.split(',')
+
+            let html = ['<div class="grid" style="grid-template-columns: 1fr repeat(', aves.length, ', auto 1fr    )">'];
+            const block = '<div class="block"></div>';
+
+            const row = [block]
+            for (const ave of aves) {
+                row.push('<div class="ave">', ave, '</div>');
+                row.push(block)
+            }
+
+            for (const st of strs) {
+                html.push(...row);
+                html.push('<div class="st">', st, '</div>');
+                for (const ave of aves) {
+                    html.push('<div class="corner" id="', ave, '/', st, '"></div>')
+                    html.push('<div class="st">', st, '</div>');
+                }
+
+            }
+            html.push(...row);
+            html.push('</div>');
+
+            document.write(html.join(''));
+
+
+
+            const state = useState({
+
+            });
+
+            Lightue({
+
+            });
+
+            function update(delta) {
+
+            }
+
+            function render() {
+
+            }
+
+            loop(60, update, render);
+        })();
+
+        function rnd() {
+            switch (arguments.length) {
+                case 1:
+                    if (arguments[0] instanceof Array)
+                        return arguments[0][Math.floor(Math.random() * arguments[0].length)];
+                    else return (arguments[0] * Math.random()) | 0;
+                case 2:
+                    return (arguments[0] + Math.random() * (arguments[1] - arguments[0])) | 0;
+                case 0:
+                default:
+                    return Math.random();
+            }
+        }
+    </script>
+</body>
+
+</html>
