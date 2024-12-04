@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>4x</title>
+    <script src="lightue.min.js"></script>
+    <style>
+        .root {
+            position: absolute;
+            top: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script name="canvas" type="text/javascript">
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script type="text/javascript">
+        (() => {
+            const { useState, button, div, span } = Lightue;
+            const { random, sin, cos, sqrt, min, max } = Math;
+            const tau = Math.PI * 2;
+
+            // 4X space game
+            // Start on one planet expand to many with time
+            // Each planet has population capacity and population
+            // player can build districs that when manned produce food, production or research
+            //  - food is required by population
+            //  - production goes into constructing anything
+            //  - reasearch goes into aquiring new technologies
+
+            const planetTraits = [
+                [20, 'rich', 'poor'],
+                [20, 'fertile', 'fertile', 'barren', 'fertile', 'barren', 'ocean', 'ice', 'desert'],
+                [10, 'hollow'],
+                [2, 'ancient ruins'],
+                [5, 'rings'],
+                [5, 'moon', 'moons'],
+                [5, 'week magnetic field', 'supermagnetized core']
+            ];
+
+            let nameCounter = 0;
+            let numSystems = 100;
+            let angle = 0;
+
+            const ctx = fullscreenCanvas();
+            const { width, height } = ctx.canvas;
+
+            const color = {
+                O: '#92b5ff', B: '#a2c0ff', A: '#d5e0ff', F: '#f9f5ff', G: '#ffede3', K: '#ffdab5', M: '#ffb56c', W: '#00feff', S: '#f8b292', C: '#ffd0d0', D: '#8a97ec', H: 'grey'
+            }
+
+            const systems = [];
+            const lanes = [];
+            const dists = [];
+            const links = [];
+
+            for (let i = 0; i < numSystems; ++i)systems.push(system());
+
+            for (let i = 0; i < numSystems; ++i) {
+                const row = [];
+                const r2 = [];
+                for (let j = 0; j < i; ++j) {
+                    r2.push(false);
+                    row.push(dist(systems[i].pos, systems[j].pos));
+                }
+                lanes.push(r2);
+                dists.push(row);
+                links[i] = 0;
+            }
+
+            let set = new Set([0]);
+
+            let lanesLength = 0;
+            let numLanes = 0;
+
+            while (set.size < numSystems) {
+                let d = Infinity;
+                let shortest = [];
+                let add = null;
+                let root = null;
+                for (let i = 0; i < numSystems; ++i) {
+                    if (set.has(i)) continue;
+
+                    for (let j of set) {
+
+                        const dj = dists[max(i, j)][min(i, j)];
+                        if (dj < d) {
+                            d = dj;
+                            shortest = [max(i, j), min(i, j)];
+                            add = i;
+                            root = j;
+                        }
+                    }
+                }
+
+                lanesLength += d;
+                numLanes++;
+
+                lanes[shortest[0]][shortest[1]] = true;
+                set.add(add);
+
+                links[root]++;
+                links[add]++;
+            }
+
+            const avg = lanesLength / numLanes;
+            for (let i = 0; i < numSystems; ++i) {
+                while (links[i] < 4) {
+
+                    let d = Infinity;
+                    let target = null;
+
+                    for (let j = 0; j < i; ++j) {
+                        const dj = dists[i][j]
+                        if (dj < 2 * avg && links[j] < 4 && dj < d) {
+                            d = dj;
+                            target = j;
+                        }
+                    }
+
+                    for (let j = i + 1; j < numSystems; ++j) {
+                        const dj = dists[j][i]
+                        if (dj < 2 * avg && links[j] < 4 && dj < d) {
+                            d = dj;
+                            target = j;
+                        }
+                    }
+
+                    if (target == null) break;
+
+                    lanes[max(i, target)][min(i, target)] = true;
+                    links[i]++;
+                    links[target]++;
+                }
+            }
+
+            const state = useState({
+                frame: null,
+                systems,
+                lanes
+            });
+
+            Lightue({
+                _style: 'left: ' + height + 'px',
+                menu: ['planets', 'tech', 'designer', 'diplomacy'].map(x => menu(x, x)),
+                frame: () => state.frame
+            });
+
+            loop(60, update, render);
+
+            function update(delta) {
+                angle -= delta * tau / 100000;
+            }
+
+            function render() {
+                ctx.clearRect(0, 0, width, height)
+
+                for (let i = 0; i < numSystems; ++i) {
+                    for (let j = 0; j < i; ++j) {
+                        if (lanes[i][j]) {
+
+                            ctx.beginPath();
+                            const [x1, y1] = map(systems[i].pos)
+                            const [x2, y2] = map(systems[j].pos)
+
+                            ctx.moveTo(x1, y1);
+                            ctx.lineTo(x2, y2);
+
+                            ctx.strokeStyle = ctx.createLinearGradient(x1, y1, x2, y2);
+
+                            const d1 = depth(systems[i].pos) / 2 + .2;
+                            const d2 = depth(systems[j].pos) / 2 + .2;
+
+                            ctx.strokeStyle.addColorStop(0, `rgb(${d1},${d1},${d1})`)
+                            ctx.strokeStyle.addColorStop(1, `rgb(${d2},${d2},${d2})`)
+                            ctx.stroke();
+                        }
+                    }
+                }
+
+                for (let { pos, type } of state.systems) {
+                    ctx.fillStyle = color[type]
+                    const [x, y] = map(pos)
+                    ctx.fillRect(x-1, y-1, 2, 2)
+                }
+            }
+
+            function map(pos) {
+                return [height / 2 + (pos[0] * cos(angle) - pos[1] * sin(angle)) * height, pos[2] * height];
+            }
+
+            function depth(pos) {
+                return ((pos[0] * sin(angle) + pos[1] * cos(angle)) + .5) * 255 | 0
+            }
+
+            function menu(title, frame) {
+                return {
+                    $$: title,
+                    onclick: () => state.frame = frame
+                }
+            };
+
+            function system() {
+                const type = rnd('O, B, A, F, G, K, M, W, S, C, D, H'.split(', '));
+                const name = getName();
+
+                const numPlanets = 2 + rnd(7);
+                const planets = [];
+
+                for (let i = 0; i < numPlanets; ++i)planets.push(planet(name + ' ' + roman(i + 1)))
+
+                const a = random() * tau;
+                const d = (1 - (random() * random())) / 2;
+
+                return {
+                    type,
+                    name,
+                    planets,
+                    pos: [d * cos(a), d * sin(a), random()]
+                }
+            }
+
+            function planet(name) {
+                return {
+                    name,
+                    size: rnd(10),
+                    traits: planetTraits.filter(([prob]) => rnd(100) < prob).map(([_, ...traits]) => rnd(traits))
+                }
+            }
+
+            function getName() {
+                return "Star " + (++nameCounter);
+            }
+
+            function rnd(a) {
+                return a instanceof Array ? a[rnd(a.length)] : ((a * random()) | 0)
+            }
+
+            function roman(x) {
+                return x;
+            }
+
+            function dist(p1, p2) {
+                const dx = p1[0] - p2[0];
+                const dy = p1[1] - p2[1];
+                const dz = p1[2] - p2[2];
+
+                return sqrt(dx * dx + dy * dy + dz * dz);
+            }
+        })();
+    </script>
+</body>
+
+</html>
