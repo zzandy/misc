@@ -112,20 +112,28 @@
             ];
 
             const alphabeth = 'abcdefghijklmnopqrstuvwxyz0123456789-'.toUpperCase().split('');
+            let recentNames = new Set();
+
             let beginning = new Set(), middle = new Set(), end = new Set();
-            'Ma la sta re, Men tar, Il os, Pak led, Da tho mir, Vor mir, En dor, Mek lar, Mek lon, Dan too ine, U rec tum, Arra kis, Klen dat hu, Ko bol, Mag ra thea, Tran tor, Mel mac, Kor ri ban, Ry loth, Cor rus cant, Ta o, Al de ra an, Su liu kemai, Se lu sa, Hei di, Re gu lus, Aga mem non, Tla xis'.split(', ').map(name => name.split(' ')).forEach(([start, ...rest]) => {
-                beginning.add(start);
+            'Ma la sta re, Men tar, Il os, Pak led, Da tho mir, Min bar, Vor um, Ni da vel lir, En dor, Mek lar, Mec lon, Dan too ine, U rec tum, Ar ra kis, Klen dat hu, Ko bol, Mag ra thea, Tran tor, Mel mac, Kor ri ban, Ry loth, Cor rus cant, Ta o, Al de ra an, Su liu kemai, Se lu sa, Hei di, Re gu lus, Aga mem non, Tlei lax, Beo fong kor xis, Te neri fe, Le to hot pei nam val, Wei quan fuen, Zak crey wur, Ur by ksar quan, Z ha dum, Fen sa lir'
+                .split(', ')
+                .map(name => { recentNames.add(name.replace(/\s/g, '')); return name.split(' ') })
+                .forEach(([start, ...rest]) => {
+                    beginning.add(start);
 
-                for (let i = 0; i < rest.length - 1; ++i)middle.add(rest[i]);
+                    for (let i = 0; i < rest.length - 1; ++i)middle.add(rest[i]);
 
-                end.add(rest[rest.length - 1]);
-            });
+                    end.add(rest[rest.length - 1]);
+                });
 
             beginning = [...beginning];
             middle = [...middle];
             end = [...end];
 
-            let recentNames = new Set();
+            const heatStart = {};
+            const heatMid = {};
+            const heatEnd = {};
+
             let numSystems = 100;
             let angle = 0;
 
@@ -160,6 +168,7 @@
             let lanesLength = 0;
             let numLanes = 0;
 
+            // construct links
             while (set.size < numSystems) {
                 let d = Infinity;
                 let shortest = [];
@@ -190,6 +199,7 @@
                 links[add]++;
             }
 
+            // add lanes
             const avg = lanesLength / numLanes;
             for (let i = 0; i < numSystems; ++i) {
                 while (links[i] < 4) {
@@ -250,6 +260,8 @@
             });
 
             document.querySelector('.root').style = 'left: ' + ctx.canvas.height + 'px';
+            const cursor = { x: Infinity, y: Infinity };
+            ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX, cursor.y = clientY });
 
             loop(60, update, render);
 
@@ -258,41 +270,96 @@
             }
 
             function render() {
-                ctx.clearRect(0, 0, width, height)
+                ctx.clearRect(0, 0, width, height);
+
+                const depths = [];
+                const depthOrder = [];
+
+                let closest = null;
+                let closestDist = Infinity;
 
                 for (let i = 0; i < numSystems; ++i) {
-                    for (let j = 0; j < i; ++j) {
-                        if (lanes[i][j]) {
+                    const d = depth(systems[i].pos);
+                    depths[i] = d;
+                    depthOrder.push([d, i]);
 
-                            ctx.beginPath();
-                            const [x1, y1] = map(systems[i].pos)
-                            const [x2, y2] = map(systems[j].pos)
 
-                            ctx.moveTo(x1, y1);
-                            ctx.lineTo(x2, y2);
+                    const [x, y] = map(systems[i].pos)
+                    const dis = dist([x, y, 0], [cursor.x, cursor.y, 0]);
 
-                            ctx.strokeStyle = ctx.createLinearGradient(x1, y1, x2, y2);
-
-                            const d1 = depth(systems[i].pos) / 2 + .2;
-                            const d2 = depth(systems[j].pos) / 2 + .2;
-
-                            ctx.strokeStyle.addColorStop(0, `rgb(${d1},${d1},${d1})`)
-                            ctx.strokeStyle.addColorStop(1, `rgb(${d2},${d2},${d2})`)
-                            ctx.stroke();
-                        }
+                    if (dis < closestDist) {
+                        closestDist = dis;
+                        closest = i;
                     }
                 }
 
-                for (let { pos, type, name } of state.systems) {
+                depthOrder.sort(([d1], [d2]) => d1 - d2); // back to front
+                const passed = new Set();
+                for (let [d, i] of depthOrder) {
+                    passed.add(i);
+
+                    for (let j = 0; j < i; ++j) {
+                        if (passed.has(j)) continue;
+                        drawLane(i, d, j, depths[j])
+                    }
+
+                    for (let j = i + 1; j < numSystems; ++j) {
+                        if (passed.has(j)) continue;
+                        drawLane(j, depths[j], i, d);
+                    }
+
+                    if (i == closest && closestDist < 30) {
+                        continue;
+                    }
+
+                    drawStar(i)
+                }
+
+                function drawLane(i, d1, j, d2) {
+                    if (lanes[i][j]) {
+
+                        ctx.beginPath();
+                        const [x1, y1] = map(systems[i].pos)
+                        const [x2, y2] = map(systems[j].pos)
+
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+
+                        ctx.strokeStyle = ctx.createLinearGradient(x1, y1, x2, y2);
+
+                        d1 = d1 + 20;
+                        d2 = d2 + 20;
+
+                        ctx.strokeStyle.addColorStop(0, `rgb(${d1},${d1},${d1})`)
+                        ctx.strokeStyle.addColorStop(1, `rgb(${d2},${d2},${d2})`)
+                        ctx.stroke();
+                    }
+                }
+
+                // draw systems
+                if (closestDist < 30) {
+                    drawStar(closest, true);
+                }
+
+                function drawStar(i, selected) {
+                    let { pos, type, name } = systems[i]
                     ctx.fillStyle = color[type]
                     const [x, y] = map(pos)
                     const d = depth(pos);
 
                     ctx.fillRect(x - 1, y - 1, 2, 2)
 
+                    if (selected) {
+                        ctx.strokeRect(x - 10, y - 10, 20, 20);
+                    }
 
-                    ctx.fillStyle = 'oklch(from ' + color[type] + ' calc(l*' + (d / 255 / 2+.5) + '  ) c h)'
-                    ctx.fillText(name, x, y)
+                    ctx.shadowColor = 'rgb(0,0,0)'
+                    ctx.shadowOffsetY = selected ? 1 : 2;
+
+                    ctx.fillStyle = 'oklch(from ' + color[type] + ' calc(l*' + (d / 255 / 2 + .5) + '  ) c h)'
+                    ctx.textBaseline = 'middle'
+                    ctx.fillText(name, x+5, y - (selected ? 1 : 0))
+
                 }
             }
 
@@ -338,10 +405,13 @@
                 const type = rnd('O, B, A, F, G, K, M, W, S, C, D, H'.split(', '));
                 const name = getName();
 
-                const numPlanets = 2 + rnd(7);
+                const numPlanets = 3 + rnd(7);
                 const planets = [];
 
-                for (let i = 0; i < numPlanets; ++i)planets.push(planet(name + ' ' + roman(i + 1)))
+                for (let i = 0; i < numPlanets; ++i) {
+                    if (rnd(100) < 10) continue;
+                    planets.push(planet(name + ' ' + roman(i + 1)))
+                }
 
                 const a = random() * tau;
                 const d = (1 - (random() * random())) / 2;
@@ -350,6 +420,7 @@
                     type,
                     name,
                     planets,
+                    color: rnd(['#ce5cff', '#26547d', '#ef436b', '#ffce5c', '#05c793']),
                     pos: [d * cos(a), d * sin(a), random()]
                 }
             }
@@ -375,13 +446,10 @@
                 let name = '';
                 let numTries = 10;
                 do {
-
                     name = rnd(100) < 40
-                        ? rnd(beginning) + (rnd(100) < 20 ? rnd(middle) + rnd(middle) : rnd(middle)) + rnd(end)
-                        : rnd(beginning) + rnd(end)
-
-
-                } while (recentNames.has(name) && numTries-- > 0)
+                        ? randomPart(beginning, heatStart) + (rnd(100) < 40 ? randomPart(middle, heatMid) + randomPart(middle, heatMid) : randomPart(middle, heatMid)) + randomPart(end, heatEnd)
+                        : randomPart(beginning, heatStart) + randomPart(end, heatEnd);
+                } while ((name.length > 11 || recentNames.has(name)) && numTries-- > 0)
 
                 if (numTries == 0) {
                     const root = name;
@@ -395,6 +463,22 @@
                 }
 
                 return name;
+
+                function randomPart(source, heats) {
+                    let heat = 0;
+                    let part = null;
+                    let n = 0;
+                    do {
+                        ++n;
+                        part = rnd(source);
+                        if (!(part in heats)) heats[part] = 0;
+                    }
+                    while (heats[part] > heat++);
+
+                    heats[part] += heat;
+
+                    return part;
+                }
 
                 function randomSuffix() {
                     let len = 2 + rnd(5);
@@ -411,9 +495,6 @@
                     }
 
                     return res;
-
-
-
                 }
             }
 
