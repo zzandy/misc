@@ -113,7 +113,7 @@
 
             const alphabeth = 'abcdefghijklmnopqrstuvwxyz0123456789-'.toUpperCase().split('');
             let beginning = new Set(), middle = new Set(), end = new Set();
-            'Ma la sta re, Men tar, Il os, Pak led, Da tho mir, Vor mir, En dor, Mek lar, Mek lon, Dan too ine, U rec tum, Arra kis, Klen dat hu, Ko bol, Mag ra thea, Tran tor, Mel mac, Kor ri ban, Ry loth, Cor rus cant, Ta o, Al de ra an, Su liu kemai, Se lu sa, Hei di, Re gu lus, Aga mem non, Tla xis'.split(', ').map(name => name.split(' ')).forEach(([start, ...rest]) => {
+            'Ma la sta re, Men tar, Il os, Sul lust, Ata xis, Bra ko, Ka mi no, Mus ta far, Ho th, Bes pin, Kra it, Ta shy lum, Jak ku, Pak led, Da tho mir, Vor con, En dor, Rev lar, Mek lon, Dan too ine, U rec tum, Arra kis, Klen dat hu, Ko bol, Mag ra thea, Tran tor, Mel mac, Kor ri ban, Ry loth, Cor rus cant, Ta o, Al de ra an, Su liu kemai, Se lu sa, Hei di, Re gu lus, Aga mem non, Tla xis'.split(', ').map(name => name.split(' ')).forEach(([start, ...rest]) => {
                 beginning.add(start);
 
                 for (let i = 0; i < rest.length - 1; ++i)middle.add(rest[i]);
@@ -141,7 +141,24 @@
             const dists = [];
             const links = [];
 
-            for (let i = 0; i < numSystems; ++i)systems.push(system());
+            for (let i = 0; i < numSystems; ++i) {
+                const sys = system();
+                let clear = false;
+                while (!clear) {
+                    clear = true;
+                    for (const { pos } of systems) {
+                        if (dist(pos, sys.pos) < .12) {
+                            const a = random() * tau;
+                            const d = (1 - (random() * random())) / 2;
+                            sys.pos = [d * cos(a), d * sin(a), random()];
+                            clear = false;
+                            break;
+                        }
+                    }
+                }
+
+                systems.push(sys);
+            }
 
             for (let i = 0; i < numSystems; ++i) {
                 const row = [];
@@ -290,8 +307,7 @@
 
                     ctx.fillRect(x - 1, y - 1, 2, 2)
 
-
-                    ctx.fillStyle = 'oklch(from ' + color[type] + ' calc(l*' + (d / 255 / 2+.5) + '  ) c h)'
+                    ctx.fillStyle = 'oklch(from ' + color[type] + ' calc(l*' + (d / 255 / 2 + .5) + '  ) c h)'
                     ctx.fillText(name, x, y)
                 }
             }
