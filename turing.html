@@ -207,12 +207,12 @@
 
                         if (i < n - 1 && j < m - 1 && values[(i + 1) * m + j + 1] && values[(i + 1) * m + j + 1][k] == x[k]) {
                             scores[i * m + j][k] += .25;
-                            scores[(i + 1) * m + j][k] += .25;
+                            scores[(i + 1) * m + j + 1][k] += .25;
                         }
 
                         if (i > 0 && j < m - 1 && values[(i - 1) * m + j + 1] && values[(i - 1) * m + j + 1][k] == x[k]) {
                             scores[i * m + j][k] += .25;
-                            scores[(i - 1) * m + j][k] += .25;
+                            scores[(i - 1) * m + j + 1][k] += .25;
                         }
                     }
                 }
