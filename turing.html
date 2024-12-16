@@ -4,25 +4,6 @@
 <head>
     <meta charset="utf-8" />
     <title>Turing</title>
-    <style>
-        .table {
-            display: grid;
-            grid-template-columns: repeat(11, 1fr);
-            gap: .2em;
-        }
-
-        .d0 {
-            color: orange
-        }
-
-        .d1 {
-            color: teal
-        }
-
-        .d2 {
-            color: purple
-        }
-    </style>
 </head>
 
 <body>
@@ -88,12 +69,15 @@
         const out = ['<div class="table">'];
 
         let values = [...iterate(digits, numPositions)];
-        const m = n = Math.ceil(Math.sqrt(values.length));
+        const m = Math.sqrt(values.length) | 0;
+        const n = Math.ceil(values.length / m)
         const miss = n * m - values.length;
         for (let i = 0; i < miss; ++i)values.push(null);
 
         shuffle(values);
-        let before = rank(values);
+
+        let scores = score(values)
+        let before = rank(scores);
 
         const cw = 30;
         const ch = 30;
@@ -101,13 +85,13 @@
         const ctx = fullscreenCanvas()
 
         function adjacent(values) { for (let i = 0; i < numPositions - 1; ++i)if (values[i] == values[i + 1]) return true; return false; }
-        function lower(values) { for (let i = 0; i < numPositions; ++i)if (values[i] > digits[2]) return false; return true; }
+        function lower(values) { for (let i = 0; i < numPositions; ++i)if (values[i] > digits[digits.length / 2 | 0]) return false; return true; }
 
         const functions = [
             ['any two adjacent equal', adjacent],
             ['punch for ' + digits[2] + ' in 1st', (values) => { return values[0] == digits[2] }],
             ['are in order', (values) => { for (let i = 0; i < numPositions - 1; ++i)if (values[i] >= values[i + 1]) return false; return true; }],
-            ['contains 1-st', (values) => { for (let i = 0; i < numPositions; ++i)if (values[i] == digits[0]) return true; return false; }],
+            ['contains "' + digits[0] + '"', (values) => { for (let i = 0; i < numPositions; ++i)if (values[i] == digits[0]) return true; return false; }],
             ['all lower half', lower],
             ['not ordered', (values) => { const order = values[0] < values[1] ? 1 : values[0] > values[1] ? -1 : 0; if (order == 0) return true; for (let i = 1; i < numPositions - 1; ++i) if (values[i] == values[i + 1] || (values[i] < values[i + 1] && order == 1) || (values[i] > values[i + 1] && order == -1)) return false; return true; }],
             ['lower and adjacent', (values) => lower(values) && adjacent(values)]
@@ -119,10 +103,12 @@
             if (before == 0) return;
 
             let newValues = mutate(values);
-            let after = rank(newValues);
+            let newScores = score(newValues);
+            let after = rank(newScores);
 
             if (before > after) {
                 values = newValues;
+                scores = newScores;
                 before = after
                 if (before == 0) console.log('done')
             };
@@ -172,7 +158,8 @@
                         }
 
                         ctx.fillStyle = res ? '#1a85ff' : '#d41159';
-                        ctx.fillRect(p[0] + dx, p[1] + dy, cw / 2, ch / 2)
+                        ctx.fillRect(p[0] + dx, p[1] + dy, cw / 2, ch / 2);
+
                         dx += cw * (m + 1);
                         if (dx + cw * m > ctx.canvas.width) {
                             dx = 0;
@@ -187,7 +174,15 @@
             }
         }
 
-        function rank(values) {
+        function rank(scores) {
+            return scores.reduce((score, cell) => score + rankCell(cell), 0)
+        }
+
+        function rankCell(cell) {
+            return cell.reduce((score, v) => score + (v > 0 ? Math.pow(100, v) : 0), 0);
+        }
+
+        function score(values) {
             let cell = [];
             for (let i = 0; i < numPositions; ++i)cell.push(0);
             let scores = values.map(_ => [...cell]);
@@ -223,15 +218,18 @@
                 }
             }
 
-            return scores.reduce((score, cell) => score + cell.reduce((score, v) => score + (v > 0 ? Math.pow(100, v - 1) : 0), 0), 0)
+            return scores;
         }
 
         function mutate(values) {
             const next = [...values];
 
             let i = rnd(values.length);
-            let j = rnd(values.length);
 
+            let n = 100;
+            while (rankCell(scores[i]) == 0 && n-- > 0) i = rnd(values.length);
+
+            let j = rnd(values.length);
             while (i == j) j = rnd(values.length);
 
             [next[i], next[j]] = [next[j], next[i]];
