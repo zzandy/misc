@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Turing</title>
+    <style>
+        .table {
+            display: grid;
+            grid-template-columns: repeat(11, 1fr);
+            gap: .2em;
+        }
+
+        .d0 {
+            color: orange
+        }
+
+        .d1 {
+            color: teal
+        }
+
+        .d2 {
+            color: purple
+        }
+    </style>
+</head>
+
+<body>
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script name="canvas" type="text/javascript">
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+
+            return [can, ctx];
+        }
+    </script>
+
+
+    <script type="text/javascript">
+
+        const numPositions = 3;
+
+        const digits = '12345'.split('');
+
+        const out = ['<div class="table">'];
+
+        let values = [...iterate(digits, numPositions)];
+        const m = n = Math.ceil(Math.sqrt(values.length));
+        const miss = n * m - values.length;
+        for (let i = 0; i < miss; ++i)values.push(null);
+
+        shuffle(values);
+        let before = rank(values);
+
+        const cw = 30;
+        const ch = 30;
+
+        const ctx = fullscreenCanvas()
+
+        function adjacent(values) { for (let i = 0; i < numPositions - 1; ++i)if (values[i] == values[i + 1]) return true; return false; }
+        function lower(values) { for (let i = 0; i < numPositions; ++i)if (values[i] > digits[2]) return false; return true; }
+
+        const functions = [
+            ['any two adjacent equal', adjacent],
+            ['punch for ' + digits[2] + ' in 1st', (values) => { return values[0] == digits[2] }],
+            ['are in order', (values) => { for (let i = 0; i < numPositions - 1; ++i)if (values[i] >= values[i + 1]) return false; return true; }],
+            ['contains 1-st', (values) => { for (let i = 0; i < numPositions; ++i)if (values[i] == digits[0]) return true; return false; }],
+            ['all lower half', lower],
+            ['not ordered', (values) => { const order = values[0] < values[1] ? 1 : values[0] > values[1] ? -1 : 0; if (order == 0) return true; for (let i = 1; i < numPositions - 1; ++i) if (values[i] == values[i + 1] || (values[i] < values[i + 1] && order == 1) || (values[i] > values[i + 1] && order == -1)) return false; return true; }],
+            ['lower and adjacent', (values) => lower(values) && adjacent(values)]
+        ];
+
+        loop(60, update, render);
+
+        function update() {
+            if (before == 0) return;
+
+            let newValues = mutate(values);
+            let after = rank(newValues);
+
+            if (before > after) {
+                values = newValues;
+                before = after
+                if (before == 0) console.log('done')
+            };
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+            const colors = ['orange', 'teal', 'purple'];
+
+            for (let i = 0; i < n; ++i) {
+                for (let j = 0; j < m; ++j) {
+
+                    const x = values[i * m + j];
+
+                    if (!x) continue;
+
+                    const p = [j * cw, (i + 1) * ch]
+
+                    for (let k = 0; k < numPositions; ++k) {
+
+                        if (j < m - 1 && values[i * m + j + 1] && values[i * m + j + 1][k] == x[k]) {
+                            ctx.strokeStyle = colors[k];
+                            ctx.beginPath()
+                            ctx.moveTo(p[0] + cw / 2, p[1] + 2 * k)
+                            ctx.lineTo(p[0] + cw + cw / 2, p[1] + 2 * k)
+                            ctx.stroke();
+                        }
+
+                        if (i < n - 1 && values[(i + 1) * m + j] && values[(i + 1) * m + j][k] == x[k]) {
+                            ctx.strokeStyle = colors[k];
+                            ctx.beginPath()
+                            ctx.moveTo(p[0] + cw / 2 + 3 * k, p[1] + 2 * k)
+                            ctx.lineTo(p[0] + cw / 2 + 3 * k, p[1] + 2 * k + ch)
+                            ctx.stroke();
+                        }
+                    }
+
+                    let dx = cw * (m + 1);
+                    let dy = 0;
+                    for (let [name, fn] of functions) {
+                        const res = fn(x);
+
+                        if (i == 0 && j == 0) {
+                            ctx.fillStyle = 'silver'
+                            ctx.fillText(name, dx, dy + ch / 2)
+                        }
+
+                        ctx.fillStyle = res ? '#1a85ff' : '#d41159';
+                        ctx.fillRect(p[0] + dx, p[1] + dy, cw / 2, ch / 2)
+                        dx += cw * (m + 1);
+                        if (dx + cw * m > ctx.canvas.width) {
+                            dx = 0;
+                            dy += ch * (n + 1);
+                        }
+                    }
+
+                    ctx.font = '16px Impact'
+                    ctx.fillStyle = 'silver'
+                    ctx.fillText(x, ...p)
+                }
+            }
+        }
+
+        function rank(values) {
+            let cell = [];
+            for (let i = 0; i < numPositions; ++i)cell.push(0);
+            let scores = values.map(_ => [...cell]);
+
+            for (let i = 0; i < n; ++i) {
+                for (let j = 0; j < m; ++j) {
+
+                    const x = values[i * m + j];
+
+                    if (!x) continue;
+
+                    for (let k = 0; k < numPositions; ++k) {
+                        if (j < m - 1 && values[i * m + j + 1] && values[i * m + j + 1][k] == x[k]) {
+                            scores[i * m + j][k]++;
+                            scores[i * m + j + 1][k]++;
+                        }
+
+                        if (i < n - 1 && values[(i + 1) * m + j] && values[(i + 1) * m + j][k] == x[k]) {
+                            scores[i * m + j][k]++;
+                            scores[(i + 1) * m + j][k]++;
+                        }
+                    }
+                }
+            }
+
+            return scores.reduce((score, cell) => score + cell.reduce((score, v) => score + (v > 0 ? Math.pow(100, v - 1) : 0), 0), 0)
+        }
+
+        function mutate(values) {
+            const next = [...values];
+
+            let i = rnd(values.length);
+            let j = rnd(values.length);
+
+            while (i == j) j = rnd(values.length);
+
+            [next[i], next[j]] = [next[j], next[i]];
+
+            return next;
+        }
+
+
+
+        function* iterate(digits, n) {
+            for (let d of digits) {
+
+                if (n == 1)
+                    yield d;
+                else
+                    for (let com of iterate(digits, n - 1)) {
+                        yield d + com;
+                    }
+            }
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+    </script>
+</body>
+
+</html>
