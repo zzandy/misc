@@ -59,14 +59,11 @@
         }
     </script>
 
-
     <script type="text/javascript">
 
         const numPositions = 3;
 
-        const digits = '12345'.split('');
-
-        const out = ['<div class="table">'];
+        const digits = '1234'.split('');
 
         let values = [...iterate(digits, numPositions)];
         const m = Math.sqrt(values.length) | 0;
@@ -157,7 +154,7 @@
                             ctx.fillText(name, dx, dy + ch / 2)
                         }
 
-                        ctx.fillStyle = res ? '#1a85ff' : '#d41159';
+                        ctx.fillStyle = res ? '#ffce00' : '#147d84';
                         ctx.fillRect(p[0] + dx, p[1] + dy, cw / 2, ch / 2);
 
                         dx += cw * (m + 1);
@@ -236,8 +233,6 @@
 
             return next;
         }
-
-
 
         function* iterate(digits, n) {
             for (let d of digits) {
