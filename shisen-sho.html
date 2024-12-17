@@ -73,7 +73,7 @@
         const deg = tau / 360;
         const rad = 1 / deg;
         const sq32 = Math.sqrt(3) / 2;
-        const { random, sin, cos } = Math;
+        const { random, sin, cos, max, sign, abs } = Math;
 
         const ctx = fullscreenCanvas();
 
@@ -84,8 +84,8 @@
 
         const spriteSize = [150, 200];
 
-        const margin = 40;
-        const gap = 6;
+        const margin = 80;
+        const gap = 12;
         let ox = 0;
 
         const [cellw, cellh, tilew, tileh] = (() => {
@@ -94,12 +94,18 @@
 
             ox = (width - m * aspect * h - (m - 1) * gap) / 2 - margin
 
-            return [aspect * h, h, aspect * h, h * 1.3];
+            return [aspect * h, h, aspect * h * 1.1, h * 1.3];
         })();
 
         const grid = [];
         const cursor = { x: 0, y: 0 }
-        addEventListener("mousemove", e => { cursor.x = e.clientX; cursor.y = e.clientY })
+        let lastPath = null;
+        let lastPathFrame = -Infinity;
+        let down = false
+        let selected = null;
+
+        addEventListener('mousemove', e => { cursor.x = e.clientX; cursor.y = e.clientY })
+        addEventListener('mousedown', () => down = true)
 
         load();
 
@@ -137,7 +143,6 @@
             run();
         };
 
-        // struggling to render
         function run() {
             loop(60, update, render);
         }
@@ -146,6 +151,137 @@
 
         function update() {
             ++frame;
+            if (down) {
+                for (let i = 0; i < n; ++i) {
+                    for (let j = 0; j < m; ++j) {
+                        const x = ox + margin + j * (cellw + gap);
+                        const y = margin + i * (cellh + gap);
+                        if (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
+                            if (selected == null) {
+                                selected = [i, j];
+                            }
+                            else if (!(i == selected[0] && j == selected[1])) {
+                                let path = null;
+                                if (path = canRemove(selected, [i, j])) {
+                                    lastPath = path;
+                                    lastPathFrame = frame;
+                                    grid[selected[0]][selected[1]] = null;
+                                    grid[i][j] = null;
+                                }
+                                else {
+
+                                }
+                                selected = null;
+                            }
+                        }
+                    }
+                }
+            }
+            down = false;
+        }
+
+        function canRemove([i1, j1], [i2, j2]) {
+            if (grid[i1][j1] == null || grid[i2][j2] == null || grid[i1][j1] != grid[i2][j2]) return null;
+
+            return directlyConnected(i1, j1, i2, j2) || lConnected(i1, j1, i2, j2) || twoPointConnected(i1, j1, i2, j2);
+        }
+
+        function directlyConnected(i1, j1, i2, j2) {
+            let connected = true;
+
+            let dc = i1 == i2 ? [0, sign(j2 - j1)]
+                : j2 == j1 ? [sign(i2 - i1), 0] : null;
+
+            if (dc) for (let i = i1 + dc[0], j = j1 + dc[1]; !(i == i2 && j == j2); i += dc[0], j += dc[1]) {
+                if (grid[i] != null && grid[i][j] != null) {
+                    connected = false;
+                    break;
+                }
+            }
+            else connected = false;
+
+            return connected ? [[i1, j1], [i2, j2]] : null;
+        }
+
+        function lConnected(i1, j1, i2, j2) {
+
+            const corners = [[i1, j2], [i2, j1]];
+
+            for (let [i, j] of corners) {
+                if (grid[i] != null && grid[i][j] != null) continue;
+
+                let p1 = directlyConnected(i1, j1, i, j)
+                if (!p1) continue;
+
+                let p2 = directlyConnected(i, j, i2, j2);
+                if (!p2) continue;
+
+                p1.push(p2[1])
+                return p1;
+            }
+
+            return null;
+        }
+
+        function twoPointConnected(i1, j1, i2, j2) {
+            let dirs = [[1, 0], [0, 1]];
+
+            for (let [di, dj] of dirs) {
+                if (di && abs(i2 - i1) > 1 || dj && abs(j2 - j1) > 1) {
+                    // look between
+                    di *= sign(i2 - i1);
+                    dj *= sign(j2 - j1);
+
+                    for (let i = i1 + di, j = j1 + dj; i != i2 && j != j2; i += di, j += dj) {
+                        let p = bridge(i1, j1, i, j, i2, j2);
+                        if (p) return p;
+                    }
+                }
+
+                if (di && abs(j2 - j1) < 2 || dj && abs(i2 - i1) < 2) continue;
+                // look around
+                let si = di;
+                let sj = dj;
+                do {
+                    let i = i1 + si;
+                    let j = j1 + sj;
+
+                    if (acceptablePos(i, j)) {
+                        let p = bridge(i1, j1, i, j, i2, j2);
+                        if (p) return p;
+                    }
+
+                    i = i1 - si;
+                    j = j1 - sj;
+
+                    if (acceptablePos(i, j)) {
+                        let p = bridge(i1, j1, i, j, i2, j2);
+                        if (p) return p;
+                    }
+
+                    si += di;
+                    sj += dj;
+                } while (acceptablePos(i1 + si, j1 + sj) && acceptablePos(i1 - si, j1 - sj));
+            }
+
+            return null;
+        }
+
+        function acceptablePos(i, j) {
+            return i >= -1 && j >= -1 && i <= n && j <= m;
+        }
+
+        function bridge(i1, j1, i, j, i2, j2) {
+            if (grid[i] != null && grid[i][j] != null) return null;
+
+            let p1 = directlyConnected(i1, j1, i, j);
+            if (!p1) return null;
+
+            let p2 = lConnected(i, j, i2, j2);
+            if (!p2) return null;
+
+            p1.push(p2[1], p2[2]);
+            return p1;
         }
 
         function render() {
@@ -157,63 +293,67 @@
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, width, height);
 
+            if (lastPath && frame - lastPathFrame < 20) {
+                ctx.strokeStyle = "maroon";
+                ctx.lineWidth = cellw / 10;
+                ctx.beginPath();
+                let first = true;
+
+                for (let [i, j] of lastPath) {
+                    const x = ox + margin + j * (cellw + gap) + cellw / 2;
+                    const y = margin + i * (cellh + gap) + cellh / 2;
+                    if (first) {
+                        ctx.moveTo(x, y);
+                        first = false;
+                    }
+                    else ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+            }
+
             for (let i = 0; i < n; ++i) {
                 for (let j = 0; j < m; ++j) {
+                    if (!grid[i][j]) continue
+
                     const x = ox + margin + j * (cellw + gap);
                     const y = margin + i * (cellh + gap);
 
-                    ctx.putImageData(grid[i][j], x, y);
+                    ctx.drawImage(grid[i][j], x, y);
 
-                    if (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
+                    if (selected && i == selected[0] && j == selected[1] || cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
+                        ctx.save();
                         roundedRect(ctx, x, y, cellw, cellh, cellw / 30);
                         ctx.strokeStyle = 'white';
                         ctx.lineWidth = 4;
                         ctx.shadowColor = 'white';
                         ctx.shadowBlur = '4'
                         ctx.stroke();
+                        ctx.restore();
                     }
                 }
             }
         }
 
         function generateTile(ctx, tile) {
-            ctx.clearRect(0, 0, width, height);
-            ctx.save();
-            rounded(ctx, tilew, tileh, '#00a572');
-            ctx.clip();
-
-            let grad = ctx.createLinearGradient(0, cellh, 0, tileh);
-            grad.addColorStop(0, 'ivory')
-            grad.addColorStop(1, 'oklch(from ivory calc(l*.6) calc(c*.9) h)');
-            rounded(ctx, cellw, tileh * .9, grad);
-
-            grad = ctx.createLinearGradient(0, 0, tilew, 0)
-            grad.addColorStop(0, 'rgba(255,255,255,.4)')
-            grad.addColorStop(.05, 'black');
-
-            ctx.save()
-            ctx.globalCompositeOperation = 'screen';
-            rounded(ctx, tilew, tileh, grad);
-            ctx.restore();
-
-            grad = ctx.createLinearGradient(0, 0, tilew, 0)
-            grad.addColorStop(.95, 'white')
-            grad.addColorStop(1, 'rgba(0,0,0,.1)');
-
-            ctx.save()
-            ctx.globalCompositeOperation = 'multiply';
-            rounded(ctx, tilew, tileh, grad);
-            ctx.restore();
-
             const k = .05;
+            const r = cellw / 20;
+
+            const depth = max(tilew - cellw, tileh - cellh);
+
+            for (let i = 0; i < depth; ++i) {
+                const p = 1 - i / depth;
+                ctx.fillStyle = p > .6 ? `oklch(from #00a572 calc(l*${1 - p + .6}) c h)` : `oklch(from ivory calc(l*${.96 - p / 10}) c h)`;
+                roundedRect(ctx, (tilew - cellw) * p, (tileh - cellh) * p, cellw, cellh, r);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = 'ivory';
+            roundedRect(ctx, 0, 0, cellw, cellh, r);
+            ctx.fill();
 
             ctx.drawImage(tile, cellw * k, cellh * k, cellw * (1 - 2 * k), cellh * (1 - 2 * k));
-            roundedRect(ctx, 0, 0, cellw, cellh, cellw / 20);
-            ctx.strokeStyle = 'rgba(0, 0, 0, .2)';
-            ctx.stroke();
 
-            ctx.restore();
-            return ctx.getImageData(0,0,tilew,tileh);
+            return ctx.canvas;//.getImageData(0, 0, tilew, tileh);
         }
 
         function rnd(n) {
