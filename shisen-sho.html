@@ -82,13 +82,14 @@
         const n = 8;
         const m = 21;
 
+        let num = n * m;
         const spriteSize = [150, 200];
 
         const [ox, oy, cellw, cellh, margin, gap, tilew, tileh] = (() => {
             const aspect = spriteSize[0] / spriteSize[1];
 
             const g = .2
-            let w = width / (2  + (m - 1) * g+m);
+            let w = width / (2 + (m - 1) * g + m);
             let h = w / aspect;
 
             if (h * (2 * aspect + (n - 1) * aspect * g + n) > height) {
@@ -96,7 +97,7 @@
                 w = h * aspect;
             }
 
-            return [(width - w*(2  + (m - 1) * g + m)) / 2, (height - h * (2 * aspect + (n - 1) * aspect * g + n)) / 2, w, h, w, w * g, w * 1.1, h * 1.2];
+            return [(width - w * (2 + (m - 1) * g + m)) / 2, (height - h * (2 * aspect + (n - 1) * aspect * g + n)) / 2, w, h, w, w * g, w * 1.1, h * 1.2];
         })();
 
         const grid = [];
@@ -165,6 +166,7 @@
                             else if (!(i == selected[0] && j == selected[1])) {
                                 let path = null;
                                 if (path = canRemove(selected, [i, j])) {
+                                    num -= 2;
                                     lastPath = path;
                                     lastPathFrame = frame;
                                     grid[selected[0]][selected[1]] = null;
@@ -295,6 +297,8 @@
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, width, height);
 
+
+
             if (lastPath && frame - lastPathFrame < 20) {
                 ctx.strokeStyle = "maroon";
                 ctx.lineWidth = cellw / 10;
@@ -303,7 +307,7 @@
 
                 for (let [i, j] of lastPath) {
                     const x = ox + margin + j * (cellw + gap) + cellw / 2;
-                    const y = oy+margin + i * (cellh + gap) + cellh / 2;
+                    const y = oy + margin + i * (cellh + gap) + cellh / 2;
                     if (first) {
                         ctx.moveTo(x, y);
                         first = false;
@@ -313,26 +317,54 @@
                 ctx.stroke();
             }
 
-            for (let i = 0; i < n; ++i) {
-                for (let j = 0; j < m; ++j) {
-                    if (!grid[i][j]) continue
+            if (num) {
+                for (let i = 0; i < n; ++i) {
+                    for (let j = 0; j < m; ++j) {
+                        if (!grid[i][j]) continue
 
-                    const x = ox + margin + j * (cellw + gap);
-                    const y = oy+margin + i * (cellh + gap);
+                        const x = (ox + margin + j * (cellw + gap)) | 0;
+                        const y = (oy + margin + i * (cellh + gap)) | 0;
 
-                    ctx.drawImage(grid[i][j], x, y);
+                        ctx.drawImage(grid[i][j], x, y);
 
-                    if (selected && i == selected[0] && j == selected[1] || cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
-                        ctx.save();
-                        roundedRect(ctx, x, y, cellw, cellh, cellw / 30);
-                        ctx.strokeStyle = 'white';
-                        ctx.lineWidth = 4;
-                        ctx.shadowColor = 'white';
-                        ctx.shadowBlur = '4'
-                        ctx.stroke();
-                        ctx.restore();
+                        if (selected && i == selected[0] && j == selected[1] || cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
+                            ctx.save();
+                            roundedRect(ctx, x, y, cellw, cellh, cellw / 30);
+                            ctx.strokeStyle = 'white';
+                            ctx.lineWidth = 4;
+                            ctx.shadowColor = 'white';
+                            ctx.shadowBlur = '4'
+                            ctx.stroke();
+                            ctx.restore();
+                        }
                     }
                 }
+            }
+            else {
+                const win = '成功';
+                ctx.fillStyle = 'white';
+
+                let min = 0;
+                let max = 20000;
+                while (max - min > 10) {
+
+                    let size = (max + min) / 2;
+
+                    ctx.font = `${size}px bold Helvetica`;
+                    let w = ctx.measureText(win).width;
+
+                    if (w > width * .88) {
+                        max = size;
+                    }
+                    else {
+                        min = size;
+                    }
+                }
+
+                let w = ctx.measureText(win).width;
+                ctx.textBaseline = 'middle'
+                ctx.font = `${min}px bold Helvetica`;
+                ctx.fillText(win, width / 2 - w / 2, height / 2)
             }
         }
 
