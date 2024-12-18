@@ -80,21 +80,26 @@
         const { width, height } = ctx.canvas;
 
         const n = 8;
-        const m = 18;
+        const m = 21;
 
         const spriteSize = [150, 200];
 
-        const margin = 80;
-        const gap = 12;
-        let ox = 0;
-
-        const [cellw, cellh, tilew, tileh] = (() => {
+        const [ox, oy, cellw, cellh, margin, gap, tilew, tileh] = (() => {
             const aspect = spriteSize[0] / spriteSize[1];
-            const h = (height - margin * 2 - (n - 1) * gap) / n | 0;
 
-            ox = (width - m * aspect * h - (m - 1) * gap) / 2 - margin
+            const g = .2
+            let w = width / (2  + (m - 1) * g+m);
+            let h = w / aspect;
 
-            return [aspect * h, h, aspect * h * 1.1, h * 1.3];
+            if (h * (2 * aspect + (n - 1) * aspect * g + n) > height) {
+                console.log(
+                    'ye'
+                )
+                h = height / (2 * aspect + (n - 1) * aspect * g + n);
+                w = h * aspect;
+            }
+
+            return [(width - w*(2  + (m - 1) * g + m)) / 2, (height - h * (2 * aspect + (n - 1) * aspect * g + n)) / 2, w, h, w, w * g, w * 1.1, h * 1.2];
         })();
 
         const grid = [];
@@ -301,7 +306,7 @@
 
                 for (let [i, j] of lastPath) {
                     const x = ox + margin + j * (cellw + gap) + cellw / 2;
-                    const y = margin + i * (cellh + gap) + cellh / 2;
+                    const y = oy+margin + i * (cellh + gap) + cellh / 2;
                     if (first) {
                         ctx.moveTo(x, y);
                         first = false;
@@ -316,7 +321,7 @@
                     if (!grid[i][j]) continue
 
                     const x = ox + margin + j * (cellw + gap);
-                    const y = margin + i * (cellh + gap);
+                    const y = oy+margin + i * (cellh + gap);
 
                     ctx.drawImage(grid[i][j], x, y);
 
