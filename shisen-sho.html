@@ -92,9 +92,6 @@
             let h = w / aspect;
 
             if (h * (2 * aspect + (n - 1) * aspect * g + n) > height) {
-                console.log(
-                    'ye'
-                )
                 h = height / (2 * aspect + (n - 1) * aspect * g + n);
                 w = h * aspect;
             }
@@ -209,7 +206,6 @@
         }
 
         function lConnected(i1, j1, i2, j2) {
-
             const corners = [[i1, j2], [i2, j1]];
 
             for (let [i, j] of corners) {
@@ -244,6 +240,7 @@
                 }
 
                 if (di && abs(j2 - j1) < 2 || dj && abs(i2 - i1) < 2) continue;
+
                 // look around
                 let si = di;
                 let sj = dj;
@@ -266,7 +263,7 @@
 
                     si += di;
                     sj += dj;
-                } while (acceptablePos(i1 + si, j1 + sj) && acceptablePos(i1 - si, j1 - sj));
+                } while (acceptablePos(i1 + si, j1 + sj) || acceptablePos(i1 - si, j1 - sj));
             }
 
             return null;
