@@ -452,7 +452,7 @@
 
                 if (moves.length == 0) {
                     ctx.fillStyle = 'black';
-                    fitText('卡住')
+                    fitText('死胡同')
                 }
             }
             else {
@@ -468,7 +468,7 @@
 
                     let size = (max + min) / 2;
 
-                    ctx.font = `${size}px bold Helvetica`;
+                    ctx.font = `bold ${size}px serif`;
                     let w = ctx.measureText(text).width;
 
                     if (w > width * .88) {
@@ -481,7 +481,9 @@
 
                 let w = ctx.measureText(text).width;
                 ctx.textBaseline = 'middle'
-                ctx.font = `${min}px bold Helvetica`;
+                ctx.font = `bolder ${min}px serif`;
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = min / 50;
                 ctx.fillText(text, width / 2 - w / 2, height / 2)
                 ctx.restore();
             }
