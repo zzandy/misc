@@ -107,9 +107,12 @@
 
         let runTime = 0;
 
+        let moves = [];
         let numHints = 0;
         let hintPath = null;
-        let hintFrame = -Infinity;
+        let hintTime = -Infinity;
+        let hintIndex = rnd(256);
+        let hintCooldown = 15000;
 
         let down = false
         let selected = null;
@@ -150,6 +153,7 @@
                 grid.push(row);
             }
 
+            moves = getMoves()
             run();
         };
 
@@ -181,8 +185,9 @@
                                     lastPathFrame = frame;
                                     grid[selected[0]][selected[1]] = null;
                                     grid[i][j] = null;
+                                    moves = getMoves();
+                                    hintIndex = rnd(256);
                                 }
-
                             }
                         }
                     }
@@ -192,25 +197,26 @@
 
                 const x = width - ox - margin - cellw / 2;
                 const s = cellw / 2;
-                const y = oy + margin - s / 4 - s;
+                const y = oy + margin - s / 3.5 - s;
 
-                if (cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
+                if (runTime - hintTime > hintCooldown && cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
                     let hint = null;
-                    if (hint = getHint()) {
+                    if (hint = moves[hintIndex % moves.length]) {
                         if (JSON.stringify(hint) != JSON.stringify(hintPath))
                             numHints++;
 
                         hintPath = hint;
-                        hintFrame = frame;
+                        hintTime = runTime;
                     }
                 }
             }
             down = false;
         }
 
-        function getHint() {
-
+        function getMoves() {
             const l = n * m;
+
+            res = [];
 
             for (let a = 0; a < l - 1; ++a) {
                 const i1 = a / m | 0;
@@ -227,9 +233,11 @@
 
                     const hint = canRemove([i1, j1], [i2, j2]);
 
-                    if (hint) return hint;
+                    if (hint) res.push(hint);
                 }
             }
+
+            return res;
 
             function valid(i, j) {
                 return grid[i][j] != null && (i == 0 || j == 0 || i == n - 1 || j == m - 1 || grid[i + 1][j] != null || grid[i - 1][j] != null || grid[i][j + 1] != null || grid[i][j - 1] != null)
@@ -369,7 +377,7 @@
                     renderPath(lastPath, "maroon")
                 }
 
-                if (hintPath && frame - hintFrame < 100) {
+                if (hintPath && runTime - hintTime < 1000) {
                     renderPath(hintPath, 'gold')
                 }
 
@@ -395,7 +403,7 @@
 
                 const x = width - ox - margin - cellw / 2;
                 const s = cellw / 2;
-                const y = oy + margin - s / 4 - s;
+                const y = oy + margin - s / 3.5 - s;
 
                 roundedRect(ctx, x, y, s, s, s / 15);
                 ctx.fillStyle = 'ivory';
@@ -404,7 +412,7 @@
                 ctx.shadowBlur = cellw / 10;
                 ctx.fill();
 
-                ctx.fillStyle = 'black';
+                ctx.fillStyle = runTime - hintTime > hintCooldown ? 'black' : 'silver';
                 ctx.font = `${s}px bold Helvetica`;
                 let tw = ctx.measureText('?').width;
                 ctx.fillText('?', x + s / 2 - tw / 2, oy + margin - s / 2);
@@ -412,14 +420,16 @@
                 ctx.fillStyle = 'rgba(255, 255, 255, .2)';
 
                 const timer = (runTime / 60000 | 0).toString().padStart(2, 0) + ':' + (runTime % 60000 / 1000 | 0).toString().padStart(2, 0)
-                ctx.fillText(timer, ox + margin, oy + margin - s / 2);
+                tw = ctx.measureText(timer).width;
+                ctx.fillText(timer, (width - tw) / 2, oy + margin - s / 2);
+                ctx.fillText(moves.length + ' moves', ox + margin, oy + margin - s / 2);
 
                 if (numHints) {
-                    let tw = ctx.measureText(numHints).width;
-                    ctx.fillText(numHints, x - tw - gap, oy + margin - s / 2);
+                    let tw = ctx.measureText(numHints + ' hints').width;
+                    ctx.fillText(numHints + ' hints', x - tw - gap, oy + margin - s / 2);
                 }
 
-                if (cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
+                if (runTime - hintTime > hintCooldown && cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
                     drawFrame(x, y, s, s, s / 15);
                 }
 
@@ -442,7 +452,7 @@
             }
             else {
                 const win = '成功';
-                ctx.fillStyle = 'white';
+                ctx.fillStyle = 'gold';
 
                 let min = 0;
                 let max = 20000;
@@ -491,7 +501,7 @@
         }
 
         function rnd(n) {
-            return (Math.random() * n) | 0;
+            return n instanceof Array ? n[rnd(n.length)] : (Math.random() * n) | 0;
         }
 
         function shuffle(a) {
