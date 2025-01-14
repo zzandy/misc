@@ -104,6 +104,13 @@
         const cursor = { x: 0, y: 0 }
         let lastPath = null;
         let lastPathFrame = -Infinity;
+
+        let runTime = 0;
+
+        let numHints = 0;
+        let hintPath = null;
+        let hintFrame = -Infinity;
+
         let down = false
         let selected = null;
 
@@ -152,9 +159,11 @@
 
         var frame = 0;
 
-        function update() {
+        function update(delta) {
             ++frame;
+            runTime += delta;
             if (down) {
+                let first = selected == null;
                 for (let i = 0; i < n; ++i) {
                     for (let j = 0; j < m; ++j) {
                         const x = ox + margin + j * (cellw + gap);
@@ -166,22 +175,65 @@
                             else if (!(i == selected[0] && j == selected[1])) {
                                 let path = null;
                                 if (path = canRemove(selected, [i, j])) {
+                                    timeSinceBurn = 0;
                                     num -= 2;
                                     lastPath = path;
                                     lastPathFrame = frame;
                                     grid[selected[0]][selected[1]] = null;
                                     grid[i][j] = null;
                                 }
-                                else {
 
-                                }
-                                selected = null;
                             }
                         }
                     }
                 }
+
+                if (!first) selected = null;
+
+                const x = width - ox - margin - cellw / 2;
+                const s = cellw / 2;
+                const y = oy + margin - s / 4 - s;
+
+                if (cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
+                    let hint = null;
+                    if (hint = getHint()) {
+                        if (JSON.stringify(hint) != JSON.stringify(hintPath))
+                            numHints++;
+
+                        hintPath = hint;
+                        hintFrame = frame;
+                    }
+                }
             }
             down = false;
+        }
+
+        function getHint() {
+
+            const l = n * m;
+
+            for (let a = 0; a < l - 1; ++a) {
+                const i1 = a / m | 0;
+                const j1 = a % m;
+
+                if (!valid(i1, j1)) continue;
+
+                for (let b = a + 1; b < l; ++b) {
+
+                    const i2 = b / m | 0;
+                    const j2 = b % m;
+
+                    if (!valid(i2, j2)) continue;
+
+                    const hint = canRemove([i1, j1], [i2, j2]);
+
+                    if (hint) return hint;
+                }
+            }
+
+            function valid(i, j) {
+                return grid[i][j] != null && (i == 0 || j == 0 || i == n - 1 || j == m - 1 || grid[i + 1][j] != null || grid[i - 1][j] != null || grid[i][j + 1] != null || grid[i][j - 1] != null)
+            }
         }
 
         function canRemove([i1, j1], [i2, j2]) {
@@ -297,47 +349,95 @@
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, width, height);
 
-
-
-            if (lastPath && frame - lastPathFrame < 20) {
-                ctx.strokeStyle = "maroon";
-                ctx.lineWidth = cellw / 10;
-                ctx.beginPath();
-                let first = true;
-
-                for (let [i, j] of lastPath) {
-                    const x = ox + margin + j * (cellw + gap) + cellw / 2;
-                    const y = oy + margin + i * (cellh + gap) + cellh / 2;
-                    if (first) {
-                        ctx.moveTo(x, y);
-                        first = false;
-                    }
-                    else ctx.lineTo(x, y);
-                }
-                ctx.stroke();
-            }
-
             if (num) {
                 for (let i = 0; i < n; ++i) {
                     for (let j = 0; j < m; ++j) {
-                        if (!grid[i][j]) continue
+                        if (!grid[i][j]) continue;
 
                         const x = (ox + margin + j * (cellw + gap)) | 0;
                         const y = (oy + margin + i * (cellh + gap)) | 0;
 
                         ctx.drawImage(grid[i][j], x, y);
 
-                        if (selected && i == selected[0] && j == selected[1] || cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
-                            ctx.save();
-                            roundedRect(ctx, x, y, cellw, cellh, cellw / 30);
-                            ctx.strokeStyle = 'white';
-                            ctx.lineWidth = 4;
-                            ctx.shadowColor = 'white';
-                            ctx.shadowBlur = '4'
-                            ctx.stroke();
-                            ctx.restore();
+                        if ((selected && i == selected[0] && j == selected[1]) || (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh)) {
+                            drawFrame(x, y, cellw, cellh, cellw / 30);
                         }
                     }
+                }
+
+                if (lastPath && frame - lastPathFrame < 20) {
+                    renderPath(lastPath, "maroon")
+                }
+
+                if (hintPath && frame - hintFrame < 100) {
+                    renderPath(hintPath, 'gold')
+                }
+
+                function renderPath(path, color) {
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = cellw / 10;
+                    ctx.beginPath();
+                    let first = true;
+
+                    for (let [i, j] of path) {
+                        const x = ox + margin + j * (cellw + gap) + cellw / 2;
+                        const y = oy + margin + i * (cellh + gap) + cellh / 2;
+                        if (first) {
+                            ctx.moveTo(x, y);
+                            first = false;
+                        }
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.stroke();
+                }
+
+                ctx.save();
+
+                const x = width - ox - margin - cellw / 2;
+                const s = cellw / 2;
+                const y = oy + margin - s / 4 - s;
+
+                roundedRect(ctx, x, y, s, s, s / 15);
+                ctx.fillStyle = 'ivory';
+                ctx.lineWidth = 4;
+                ctx.shadowColor = 'rgba(0,0,0, .8)';
+                ctx.shadowBlur = cellw / 10;
+                ctx.fill();
+
+                ctx.fillStyle = 'black';
+                ctx.font = `${s}px bold Helvetica`;
+                let tw = ctx.measureText('?').width;
+                ctx.fillText('?', x + s / 2 - tw / 2, oy + margin - s / 2);
+
+                ctx.fillStyle = 'rgba(255, 255, 255, .2)';
+
+                const timer = (runTime / 60000 | 0).toString().padStart(2, 0) + ':' + (runTime % 60000 / 1000 | 0).toString().padStart(2, 0)
+                ctx.fillText(timer, ox + margin, oy + margin - s / 2);
+
+                if (numHints) {
+                    let tw = ctx.measureText(numHints).width;
+                    ctx.fillText(numHints, x - tw - gap, oy + margin - s / 2);
+                }
+
+                if (cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
+                    drawFrame(x, y, s, s, s / 15);
+                }
+
+                ctx.restore();
+
+                function drawFrame(x, y, w, h, r) {
+                    ctx.save();
+                    roundedRect(ctx, x, y, w, h, r);
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = r;
+                    ctx.shadowColor = 'white';
+                    ctx.shadowBlur = r
+                    ctx.stroke();
+                    ctx.restore();
+
+                    ctx.lineWidth = r / 3;
+                    ctx.strokeStyle = 'gold'
+                    ctx.stroke();
                 }
             }
             else {
