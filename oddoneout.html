@@ -78,7 +78,6 @@
         const tau = Math.PI * 2;
         const sq32 = sqrt(3) / 2;
 
-
         let ctx = fullscreenCanvas();
         const { width, height } = ctx.canvas;
 
@@ -89,7 +88,7 @@
                 --rows,
                     rebuild();
             }
-            else if (deltaY < 0 && rows < 20) {
+            else if (deltaY < 0 && rows < 30) {
                 ++rows;
                 rebuild()
             }
@@ -215,7 +214,7 @@
             }
         }
 
-        let rows = 6;
+        let rows = 8;
         let field = [];
 
         function rebuild() {
@@ -227,7 +226,7 @@
 
             const shape = pick(oddity == 'shape', Object.values(shapes), rnd(100) < 20)
             const color = pick(oddity == 'color', colors, true || rnd(100) < 20);
-            const scale = pick(oddity == 'size', oddity == 'size' ? [1, 1, 1, .5] : [1], rnd(100) < 5);
+            const scale = pick(oddity == 'size', oddity == 'size' ? [1, .5, .5, .5, .5] : [1], rnd(100) < 5);
             const fill = pick(oddity == 'fill', [true, false], false);
 
             let i = 0;
@@ -284,7 +283,7 @@
             for (let [x, y, size, shape, color, scale, solid, special, { value: fade }] of field) {
                 ctx.save();
                 ctx.translate(x, y);
-                ctx.lineWidth = fade * .13/scale;
+                ctx.lineWidth = fade * .13 / scale;
                 const q = fade * size * scale / 2
                 ctx.scale(q, q);
 
@@ -334,7 +333,7 @@
         }
 
         function fillShapes() {
-            const ss = .9; // square size
+            const ss = .85; // square size
             const r2 = ss * sqrt(2); // diamond radius
             const cw = .45; // cross width
             const w = cw * sqrt(2); // x width
@@ -377,7 +376,7 @@
                 })()),
 
                 'hex': path((() => {
-                    const r = 1;
+                    const r = 1.05;
                     const p = []
                     for (let i = 0; i < 6; ++i) {
                         let a1 = tau / 6 * i;
@@ -387,7 +386,7 @@
                 })()),
 
                 'h2': path((() => {
-                    const r = 1;
+                    const r = 1.05;
                     const p = []
                     for (let i = 0; i < 6; ++i) {
                         let a1 = tau / 6 * i + tau / 12;
@@ -398,12 +397,12 @@
                 'c': path((path) => {
                     const a = .1;
                     path.moveTo(-.1, 0);
-                    path.arc(0, 0, .5, a * tau, (1 - a) * tau);
+                    path.arc(0, 0, 1, a * tau, (1 - a) * tau);
                 }),
                 'c2': path((path) => {
                     const a = .1;
                     path.moveTo(.1, 0);
-                    path.arc(0, 0, .5, (.5 - a) * tau, (.5 + a) * tau, true);
+                    path.arc(0, 0, 1, (.5 - a) * tau, (.5 + a) * tau, true);
                 }),
                 'square': path([-ss, -ss, -ss, ss, ss, ss, ss, -ss,]),
                 'diamond': path([0, -r2, r2, 0, 0, r2, -r2, 0,]),
