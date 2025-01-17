@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Odd One Out</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+            ctx.canvas.style.display = 'block';
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script name="mouse" type="text/javascript">
+        function listen(element) {
+            const mouse = { x: -Infinity, y: -Infinity, down: false }
+
+            element.addEventListener('mousemove', ({ clientX, clientY }) => { mouse.x = clientX, mouse.y = clientY })
+            element.addEventListener('mousedown', () => mouse.down = true);
+            element.addEventListener('mouseup', () => mouse.down = false);
+            element.addEventListener('mouseleave', () => mouse.down = false);
+
+            return mouse;
+        }
+    </script>
+
+    <script type="text/javascript">
+        const { sin, cos, tan, sqrt, min, max, abs } = Math;
+        const tau = Math.PI * 2;
+        const sq32 = sqrt(3) / 2;
+
+
+        let ctx = fullscreenCanvas();
+        const { width, height } = ctx.canvas;
+
+        const mouse = listen(ctx.canvas);
+
+        addEventListener('wheel', ({ deltaY }) => {
+            if (deltaY > 0 && rows > 2) {
+                --rows,
+                    rebuild();
+            }
+            else if (deltaY < 0 && rows < 20) {
+                ++rows;
+                rebuild()
+            }
+        });
+
+        addEventListener('keydown', ({ key }) => { if (key == ' ') rebuild() })
+
+        const shapes = fillShapes();
+        const colors = [
+            '#dede0e',
+            '#fad000',
+            '#faa002',
+            '#e66102',
+            '#ed1515',
+            '#c80d66',
+            '#ff4fbc',
+            '#720C99',
+            '#0d5bc7',
+            '#079ebd',
+            '#88dfbb',
+            '#20cc10',
+            '#00954a',
+            '#fcfcfc',
+        ];
+
+        const layouts = [
+            function* (numRows) {
+                const gap = .25;
+                const margin = .5;
+
+                const size = height / (2 * margin + (numRows - 1) * gap + numRows);
+                const numCols = (((width / size) - 2 * margin + gap) / (gap + 1)) | 0;
+
+                const ox = (width - (size * numCols + size * gap * (numCols - 1))) / 2;
+                const oy = (height - (size * numRows + size * gap * (numRows - 1))) / 2;
+
+                for (let i = 0; i < numRows; ++i) {
+                    for (let j = 0; j < numCols; ++j) {
+                        yield [ox + size * (j * (gap + 1) + .5), oy + size * (i * (gap + 1) + .5), size, numCols * numRows];
+                    }
+                }
+            },
+
+            function* (numRows) {
+                const gap = .25;
+                const margin = .5;
+
+                const size = height / (2 * margin + ((numRows - 1) * gap + numRows) * sq32);
+                const numCols = (((width / size) - 2 * margin + gap) / (gap + 1)) | 0;
+
+                const ox = (width - (size * (numCols + .5 + gap / 2) + size * gap * (numCols - 1))) / 2;
+                const oy = (height - sq32 * (size * numRows + size * gap * (numRows - 1))) / 2;
+
+                for (let i = 0; i < numRows; ++i) {
+                    for (let j = 0; j < numCols; ++j) {
+                        yield [ox + size * (j * (gap + 1) + .5 + (.5 + gap / 2) * (i % 2)), oy + sq32 * size * (i * (gap + 1) + .5), size, numCols * numRows];
+                    }
+                }
+            },
+
+            function* (numRows) {
+                const gap = .25;
+                const margin = .5;
+                const size = height / (2 * margin + (numRows - 1) * gap + .5 + gap / 2 + numRows);
+                const numCols = (((width / size) - 2 * margin + gap) / (gap + 1)) / sq32 | 0;
+                const ox = (width - sq32 * (size * numCols + size * gap * (numCols - 1))) / 2;
+                const oy = (height - (size * (numRows + .5 + gap / 2) + size * gap * (numRows - 1))) / 2;
+                for (let i = 0; i < numRows; ++i) {
+                    for (let j = 0; j < numCols; ++j) {
+                        yield [ox + sq32 * size * (j * (gap + 1) + .5), oy + size * (i * (gap + 1) + .5 + (.5 + gap / 2) * (j % 2)), size, numCols * numRows];
+                    }
+                }
+            }
+        ];
+
+        const lead = 200;
+        const dur = 150;
+        const fades = [
+            (x, y) => fade(lead * (width - x) / width, dur),
+            (x, y) => fade(lead * x / width, dur),
+            (x, y) => fade(lead * (height - y) / height, dur),
+            (x, y) => fade(lead * y / height, dur),
+            (x, y) => fade(lead * max(x / width, y / height), dur),
+            (x, y) => fade(lead * max((width - x) / width, y / height), dur),
+            (x, y) => fade(lead * max(x / width, (height - y) / height), dur),
+            (x, y) => fade(lead * max((x - width) / width, (height - y) / height), dur),
+            () => fade(rnd(lead), dur * 2 / 3 + rnd(dur / 3)),
+            () => fade(0, dur + rnd(lead)),
+            (x, y) => fade(lead * abs(width / 2 - x) / (width / 2), dur),
+            (x, y) => fade(lead * abs(height / 2 - y) / (height / 2), dur),
+            (x, y) => fade(lead * (1 - abs(width / 2 - x) / (width / 2)), dur),
+            (x, y) => fade(lead * (1 - abs(height / 2 - y) / (height / 2)), dur),
+            (x, y) => fade(lead * (abs(width / 2 - x) / (width / 2) + abs(height / 2 - y) / (height / 2)) / 2, dur),
+            (x, y) => fade(lead * (1 - (abs(width / 2 - x) / (width / 2) + abs(height / 2 - y) / (height / 2)) / 2), dur),
+        ];
+
+        function fade(lead, duration) {
+            let value = 0;
+            let acc = 0;
+
+            let obj = {
+                update, value
+            }
+
+            return obj;
+
+            function update(delta) {
+                if (obj.value == 1) return;
+
+                acc += delta;
+                if (acc > lead) {
+                    let dur = acc - lead;
+                    if (dur > duration) {
+                        const update = value < 1
+                        obj.value = 1;
+                        return update;
+                    }
+
+                    obj.value = fadefn(dur / duration)
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        let rows = 6;
+        let field = [];
+
+        function rebuild() {
+            redraw = true;
+            field = [];
+
+            let oddity = 'shape'; rnd(['shape', 'shape', 'shape', 'color', 'color', 'fill', 'size']);
+            let layout = layouts[rnd([0, 0, 0, 1, 2])]
+
+            const shape = pick(oddity == 'shape', Object.values(shapes), rnd(100) < 20)
+            const color = pick(oddity == 'color', colors, true || rnd(100) < 30);
+            const scale = pick(oddity == 'size', oddity == 'size' ? [1, 1, 1, .5] : [1], rnd(100) < 5);
+            const fill = pick(oddity == 'fill', [true, false], false);
+
+            let i = 0;
+            let specialIndex = null;
+            const fade = rnd(fades);
+
+            for (let [x, y, size, n] of layout(rows)) {
+                if (specialIndex === null) {
+                    specialIndex = rnd(n);
+                }
+                let isSpecial = i == specialIndex;
+                field.push([x, y, size, shape(isSpecial), color(isSpecial), scale(isSpecial), fill(isSpecial), isSpecial, fade(x, y, i)]);
+                i++;
+            }
+        }
+
+        function pick(isTheOddity, options, noisy) {
+            if (isTheOddity) {
+                const special = rnd(options);
+                let odd = rnd(options);
+                while (odd == special) odd = rnd(options);
+
+                return (isSpecial) => isSpecial ? special : odd;
+            }
+            else {
+                const x = rnd(options);
+                return noisy
+                    ? () => rnd(options)
+                    : () => x;
+            }
+        }
+
+        rebuild();
+        loop(60, update, render);
+
+        function update(delta) {
+            for (let [x, y, size, shape, color, scale, solid, special, fade] of field) {
+                if (special && mouse.down && dist(x, y, mouse.x, mouse.y) < 1.5 * size * scale / 2) {
+                    rebuild();
+                    return;
+                }
+
+                if (fade.update(delta)) redraw = true;
+            }
+        }
+
+        function dist(x1, y1, x2, y2) {
+            return sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+        }
+
+        function render() {
+            if (!redraw) return; redraw = false;
+            ctx.clearRect(0, 0, width, height)
+            for (let [x, y, size, shape, color, scale, solid, special, { value: fade }] of field) {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.lineWidth = fade * .15;
+                const q = fade * size * scale / 2
+                ctx.scale(q, q);
+
+                if (solid) {
+                    ctx.fillStyle = color;
+                    ctx.fill(shape);
+                }
+                else {
+                    ctx.strokeStyle = color;
+                    ctx.stroke(shape);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function fadefn(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
+        function rnd(n) {
+            return n instanceof Array ? n[rnd(n.length)] : (Math.random() * n) | 0
+        }
+
+        function path(fn) {
+            let path = new Path2D();
+
+            if (fn instanceof Function) { fn(path); }
+            else {
+                for (let i = 0; i < fn.length; i += 2) {
+                    if (i == 0) path.moveTo(fn[i], fn[i + 1]);
+                    else path.lineTo(fn[i], fn[i + 1]);
+                }
+            }
+            path.closePath();
+            return path;
+        }
+
+        function fillShapes() {
+            const ss = .9; // square size
+            const r2 = ss * sqrt(2); // diamond radius
+            const cw = .45; // cross width
+            const w = cw * sqrt(2); // x width
+            const q = 1 - w;
+
+            const shapes = {
+                'circle': path((path) => {
+                    path.arc(0, 0, 1, 0, tau);
+                }),
+
+                'coin': path(path => {
+                    const r = .3;
+                    path.arc(0, 0, 1, 0, tau);
+                    path.moveTo(r, r)
+                    path.lineTo(r, -r)
+                    path.lineTo(-r, -r)
+                    path.lineTo(-r, r)
+                }),
+
+                'triangle': path((() => {
+                    const r = 1.3;
+                    const s = .1;
+                    const p = []
+                    for (let i = 0; i < 3; ++i) {
+                        let a1 = tau / 3 * i;
+                        p.push(r * sin(a1), -s + r * cos(a1));
+                    }
+                    return p;
+                })()),
+
+                't2': path((() => {
+                    const r = 1.3;
+                    const s = .1;
+                    const p = []
+                    for (let i = 0; i < 3; ++i) {
+                        let a1 = tau / 3 * i + tau / 6;
+                        p.push(r * sin(a1), s + r * cos(a1));
+                    }
+                    return p;
+                })()),
+
+                'hex': path((() => {
+                    const r = 1;
+                    const p = []
+                    for (let i = 0; i < 6; ++i) {
+                        let a1 = tau / 6 * i;
+                        p.push(r * sin(a1), r * cos(a1));
+                    }
+                    return p;
+                })()),
+
+                'h2': path((() => {
+                    const r = 1;
+                    const p = []
+                    for (let i = 0; i < 6; ++i) {
+                        let a1 = tau / 6 * i + tau / 12;
+                        p.push(r * sin(a1), r * cos(a1));
+                    }
+                    return p;
+                })()),
+                'c': path((path) => {
+                    const a = .1;
+                    path.moveTo(-.1, 0);
+                    path.arc(0, 0, 1, a * tau, (1 - a) * tau);
+                }),
+                'c2': path((path) => {
+                    const a = .1;
+                    path.moveTo(.1, 0);
+                    path.arc(0, 0, 1, (1 - a) * tau, (1 + a) * tau, true);
+                }),
+                'square': path([-ss, -ss, -ss, ss, ss, ss, ss, -ss,]),
+                'diamond': path([0, -r2, r2, 0, 0, r2, -r2, 0,]),
+                'x': path([0, -w, q, -1, 1, -q, w, 0, 1, q, q, 1, 0, w, -q, 1, -1, q, -w, 0, -1, -q, -q, -1,]),
+                'cross': path([- cw, -1, cw, -1, cw, - cw, 1, - cw, 1, cw, cw, cw, cw, 1, - cw, 1, - cw, cw, -1, cw, -1, - cw, - cw, - cw,]),
+                'slash': path([
+                    .1, ss,
+                    ss, -ss,
+                    -.1, -ss,
+                    -ss, ss,]),
+                'sl2': path([
+                    ss, ss,
+                    .1, -ss,
+                    -ss, -ss,
+                    -.1, ss,]),
+                'gem': path((() => {
+                    const w1 = .6;
+                    const w2 = 1.1;
+                    const h1 = -1;
+                    const m = -.5
+                    const h2 = 1.3
+                    return [
+                        w1, h1,
+                        w2, m,
+                        0, h2,
+                        -w2, m, -w1, h1
+                    ]
+                })()),
+                'bolt': path((() => {
+                    const h = 1.4
+                    const a = .2;
+                    const b = .3;
+                    const c = .7;
+                    const t = .15
+
+                    return [
+                        b, -h,
+                        a, -t,
+                        c, -t,
+                        -b, h,
+                        -a, t,
+                        -c, t
+                    ]
+                })()),
+                'star': path((() => {
+                    const r1 = .6;
+                    const r2 = 1.2;
+                    const p = [];
+                    for (let i = 0; i < 5; ++i) {
+                        let a2 = tau / 10 + tau / 5 * i;
+                        let a1 = tau / 5 * i;
+                        p.push(r1 * sin(a1), r1 * cos(a1), r2 * sin(a2), r2 * cos(a2));
+                    }
+                    return p
+                })()),
+
+                'star2': path((path) => {
+                    const r1 = .7;
+                    const r2 = 1.2;
+
+                    path.moveTo(0, r2);
+                    path.quadraticCurveTo(r1 / 2, r1 / 2, r2, 0);
+                    path.quadraticCurveTo(r1 / 2, -r1 / 2, 0, -r2);
+                    path.quadraticCurveTo(-r1 / 2, -r1 / 2, -r2, 0);
+                    path.quadraticCurveTo(-r1 / 2, r1 / 2, 0, r2);
+                }),
+
+                'star3': path((() => {
+                    const r1 = .6;
+                    const r2 = 1.2;
+                    const p = [];
+                    for (let i = 0; i < 6; ++i) {
+                        let a2 = tau / 6 * i;
+                        let a1 = tau / 6 * i - tau / 12;
+                        p.push(r1 * sin(a1), r1 * cos(a1), r2 * sin(a2), r2 * cos(a2));
+                    }
+                    return p
+                })()),
+
+                'clubs': path(path => {
+                    let r = .6;
+                    for (let i = 0; i < 3; ++i) {
+                        let a = i * tau / 3 + tau / 12;
+                        path.arc(r * cos(a), r * sin(a), r, a - tau / 3, a + tau / 3)
+                    }
+                }),
+
+                'heart': path(path => {
+                    const s = 1.2;
+                    const x = s / sqrt(2);
+                    const m = .2;
+
+                    path.moveTo(x, m);
+                    path.lineTo(0, m + x);
+                    path.lineTo(- x, m);
+                    path.arc(- x / 2, m - x / 2, s / 2, 3 * tau / 8, 7 * tau / 8);
+                    path.arc(x / 2, m - x / 2, s / 2, 5 * tau / 8, tau / 8);
+                }),
+
+                'asterisk': wheel(6, 1.1, .7, false),
+                'y': wheel(3, 1.1, .8, true),
+                'tripl': wheel(3, 1, .9, false),
+
+
+                'eq': path(path => {
+                    const w = .8;
+                    const gap = .1
+                    path.moveTo(-ss, -w);
+                    path.lineTo(ss, -w);
+                    path.lineTo(ss, -gap);
+                    path.lineTo(-ss, -gap);
+
+                    path.closePath();
+
+                    path.moveTo(-ss, gap);
+                    path.lineTo(ss, gap);
+                    path.lineTo(ss, w);
+                    path.lineTo(-ss, w);
+                }),
+
+                'pause': path(path => {
+                    const w = .8;
+                    const gap = .1
+                    path.moveTo(-w, -ss);
+                    path.lineTo(-w, ss);
+                    path.lineTo(-gap, ss);
+                    path.lineTo(-gap, -ss);
+
+                    path.closePath();
+
+                    path.moveTo(gap, -ss);
+                    path.lineTo(gap, ss);
+                    path.lineTo(w, ss);
+                    path.lineTo(w, -ss);
+                })
+            }
+
+            function wheel(n, r, w, isOffset) {
+                let da = tau / n;
+                let a = -tau / 4 + (isOffset ? da / 2 : 0);
+                const p = [];
+
+                const h = w / 2 / tan(da / 2);
+
+                for (let i = 0; i < n; ++i) {
+
+                    const c = cos(a);
+                    const s = sin(a)
+                    const x = r * c;
+                    const y = r * s;
+
+                    const dx = w / 2 * s;
+                    const dy = w / 2 * c;
+
+                    p.push(x + dx, y - dy, x - dx, y + dy, h * c - dx, h * s + dy);
+                    a += da;
+                }
+
+                return path(p);
+            }
+
+            return shapes;
+        }
+    </script>
+</body>
+
+</html>
