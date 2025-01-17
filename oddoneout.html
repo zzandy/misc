@@ -222,11 +222,11 @@
             redraw = true;
             field = [];
 
-            let oddity = 'shape'; rnd(['shape', 'shape', 'shape', 'color', 'color', 'fill', 'size']);
+            let oddity = rnd(['shape', 'shape', 'shape', 'color', 'color', 'fill', 'size']);
             let layout = layouts[rnd([0, 0, 0, 1, 2])]
 
             const shape = pick(oddity == 'shape', Object.values(shapes), rnd(100) < 20)
-            const color = pick(oddity == 'color', colors, true || rnd(100) < 30);
+            const color = pick(oddity == 'color', colors, true || rnd(100) < 20);
             const scale = pick(oddity == 'size', oddity == 'size' ? [1, 1, 1, .5] : [1], rnd(100) < 5);
             const fill = pick(oddity == 'fill', [true, false], false);
 
@@ -284,7 +284,7 @@
             for (let [x, y, size, shape, color, scale, solid, special, { value: fade }] of field) {
                 ctx.save();
                 ctx.translate(x, y);
-                ctx.lineWidth = fade * .15;
+                ctx.lineWidth = fade * .13/scale;
                 const q = fade * size * scale / 2
                 ctx.scale(q, q);
 
@@ -398,12 +398,12 @@
                 'c': path((path) => {
                     const a = .1;
                     path.moveTo(-.1, 0);
-                    path.arc(0, 0, 1, a * tau, (1 - a) * tau);
+                    path.arc(0, 0, .5, a * tau, (1 - a) * tau);
                 }),
                 'c2': path((path) => {
                     const a = .1;
                     path.moveTo(.1, 0);
-                    path.arc(0, 0, 1, (1 - a) * tau, (1 + a) * tau, true);
+                    path.arc(0, 0, .5, (.5 - a) * tau, (.5 + a) * tau, true);
                 }),
                 'square': path([-ss, -ss, -ss, ss, ss, ss, ss, -ss,]),
                 'diamond': path([0, -r2, r2, 0, 0, r2, -r2, 0,]),
