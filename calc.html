@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Calc</title>
+    <script src="lightue.min.js"></script>
+    <style>
+        :root {
+            background-color: #e4c6a0;
+        }
+
+        .root {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: .3em;
+            max-width: 20em;
+            line-height: 5em;
+            background-color: #1a140a;
+            margin: 0 auto;
+            padding: .3em;
+            border-radius: .5em;
+        }
+
+        button {
+            line-height: 2em;
+            background-color: #f7e8d9;
+            border-width: 0;
+            border-radius: .3em;
+        }
+
+        .root,
+        button {
+            font-size: 18pt;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-weight: 600;
+        }
+
+        .op {
+            background-color: #c9a46e;
+        }
+
+        .eq {
+            background-color: #e96f12;
+        }
+
+        .mode {
+            font-size: 10pt;
+            background-color: transparent;
+            color: #c13f49;
+            opacity: .5;
+            margin-bottom: -3em;
+            z-index: 10;
+        }
+
+        .mode.on {
+            opacity: 1;
+        }
+
+        .display {
+            color: #c13f49;
+            grid-column-start: 1;
+            grid-column-end: 5;
+            text-align: end;
+            font-size: 200%;
+        }
+    </style>
+</head>
+
+<body>
+    <script type="text/javascript">
+        (() => {
+            const max = 999_999_999_999_999;
+            const { useState, button, div, span } = Lightue;
+            const pow = Math.pow;
+
+            let operand = 0;
+            let operation = '+';
+            let expectinput = true;
+            let stack = [];
+            let neg = false;
+
+            const state = useState({
+                display: 0,
+                rpn: false,
+                rpnLabel: 'RPN'
+            });
+
+            Lightue({
+                mode: button({ $$: state.$rpnLabel, $class: { on: state.$rpn }, onclick: togglerpn }),
+                display: () => state.display > max || state.display < -max ? state.display.toPrecision(12) : state.display,
+                b7: button({ $$: 7, onclick: () => push(7) }),
+                b8: button({ $$: 8, onclick: () => push(8) }),
+                b9: button({ $$: 9, onclick: () => push(9) }),
+                d: button.op({ $$: '÷', onclick: () => op('/') }),
+
+                b4: button({ $$: 4, onclick: () => push(4) }),
+                b5: button({ $$: 5, onclick: () => push(5) }),
+                b6: button({ $$: 6, onclick: () => push(6) }),
+                t: button.op({ $$: '×', onclick: () => op('*') }),
+
+                b1: button({ $$: 1, onclick: () => push(1) }),
+                b2: button({ $$: 2, onclick: () => push(2) }),
+                b3: button({ $$: 3, onclick: () => push(3) }),
+                m: button.op({ $$: '-', onclick: () => op('-') }),
+
+                c: button.op({ $$: 'C', onclick: clear }),
+                b0: button({ $$: 0, onclick: () => push(0) }),
+                beq: button.eq({ $$: () => state.rpn ? 'ENTER' : '=', onclick: calc }),
+                p: button.op({ $$: '+', onclick: () => op('+') }),
+            });
+
+            function togglerpn() {
+                state.rpn = !state.rpn
+            }
+
+            function op(o) {
+                if (expectinput && o == '-') neg = !neg;
+                else {
+                    if (state.rpn) {
+                        operation = o;
+                        rpncalc();
+                    }
+                    else {
+                        if (!expectinput) calc();
+                        operation = o;
+                        operand = state.display;
+                    }
+
+                    expectinput = true;
+                }
+            }
+
+            function rpncalc() {
+                let b = state.display;
+                let a = stack.pop();
+
+                state.rpnLabel = stack.length ? 'RPN ' + stack.length : 'RPN';
+                state.display = operation == '+' ? a + b
+                    : operation == '-' ? a - b
+                        : operation == '*' ? a * b
+                            : a / b;
+            }
+
+            function calc() {
+                if (state.rpn) {
+                    state.rpnLabel = 'RPN ' + stack.length;
+                }
+                else {
+                    const b = state.display;
+
+                    switch (operation) {
+                        case '+': state.display = operand + state.display; break;
+                        case '-': state.display = operand - state.display; break;
+                        case '*': state.display = operand * state.display; break;
+                        case '/': state.display = expectinput ? state.display / operand : operand / state.display; break;
+                    }
+
+                    if (!expectinput && op != '/') operand = b;
+                }
+                expectinput = true
+            }
+
+            function clear() {
+                state.display = 0;
+                operand = 0;
+                operation = '+';
+                stack = [];
+                state.rpnLabel = 'RPN'
+                neg = false;
+            }
+
+            function push(n) {
+                if (expectinput) {
+                    operand = state.display;
+                    if (state.rpn) stack.push(state.display)
+
+                    state.display = n * (neg ? -1 : 1)
+                    neg = false;
+                }
+                else if (state.display < max)
+                    state.display = state.display * 10 + n;
+
+                expectinput = false;
+            }
+        })();
+    </script>
+</body>
+
+</html>
