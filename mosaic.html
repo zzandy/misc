@@ -28,13 +28,110 @@
 
         const ctx = fullscreenCanvas();
 
-        const w = 32;
-        const h = 32;
+        const w = 64;
+        const h = 64;
 
         ctx.fillStyle = 'silver';
+        ctx.strokeStyle = 'silver'
 
         let skip = [];
         let high = 4;
+
+        const corners = [[0, 0], [0, 1], [1, 1], [1, 0]];
+
+        ctx.fillStyle = 'black'
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+
+        draw(0, 0, w, (ctx.canvas.height / h | 0) + 1, (ctx.canvas.width / 2 / w | 0) + 1);
+
+        ctx.translate(ctx.canvas.width / 2, 0)
+        lines(w);
+
+        function lines(s) {
+            ctx.fillStyle = 'black'
+            let i = 0;
+            let j = 0;
+
+            const g = s / 8;
+            ctx.lineWidth = 4;
+
+            while ((i - 1) * s < ctx.canvas.height) {
+
+                ctx.strokeRect(((j * s + g) | 0), i * s, 0, s)
+                ctx.strokeRect(((j * s + 3 * g) | 0), i * s, 0, s)
+                ctx.strokeRect(((j * s + 5 * g) | 0), i * s, 0, s)
+                ctx.strokeRect(((j * s + 7 * g) | 0), i * s, 0, s)
+
+
+                if ((j) * s < ctx.canvas.width && rnd(100) < 15) {
+                    ctx.strokeRect((((j + 1) * s + g) | 0), i * s, 0, s)
+                    ctx.strokeRect((((j + 1) * s + 3 * g) | 0), i * s, 0, s)
+                    ctx.strokeRect((((j + 1) * s + 5 * g) | 0), i * s, 0, s)
+                    ctx.strokeRect((((j + 1) * s + 7 * g) | 0), i * s, 0, s)
+
+
+                    let top = rnd(2) == 1;
+                    let dy = top ? s : 0;
+                    let a = top ? Math.PI : 2 * Math.PI;
+                    let b = 3 * Math.PI - a;
+
+
+                    ctx.beginPath();
+                    ctx.arc((j + 1) * s, i * s + dy, 8 * g, a, b);
+                    ctx.fill();
+
+                    for (let k = 0; k < 4; ++k) {
+                        ctx.beginPath();
+                        ctx.arc((j + 1) * s, i * s + dy, (2 * k + 1) * g, a, b);
+
+                        ctx.stroke();
+                    }
+                    j++
+                }
+
+
+
+                if ((j++) * s > ctx.canvas.width) {
+                    ++i;
+                    j = 0;
+                }
+            }
+
+        }
+
+        function draw(x, y, s, n, m) {
+            ctx.fillStyle = 'silver'
+            for (let i = 0; i < n; ++i) {
+                for (let j = 0; j < m; ++j) {
+
+                    if (rnd(s) > 16) {
+                        draw(x + j * s, y + i * s, s / 2, 2, 2)
+                        continue;
+                    }
+
+                    let k = rnd(5);
+
+                    if (k == 4) continue;
+
+
+                    ctx.save();
+                    ctx.translate(x + j * s, y + i * s);
+                    ctx.scale(s, s);
+
+                    ctx.beginPath();
+                    ctx.moveTo(corners[k][0], corners[k][1]);
+                    ctx.lineTo(corners[(k + 1) % 4][0], corners[(k + 1) % 4][1]);
+                    ctx.lineTo(corners[(k + 2) % 4][0], corners[(k + 2) % 4][1]);
+                    ctx.closePath();
+
+                    ctx.fill();
+
+                    ctx.restore();
+                }
+            }
+        }
+
+        throw ''
 
         for (let i = 0; i < ctx.canvas.height / h; ++i)
             for (let j = 0; j < ctx.canvas.width / w; ++j) {
@@ -97,6 +194,10 @@
 
             ctx.closePath();
             ctx.fill();
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
         }
 
     </script>
