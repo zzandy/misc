@@ -170,8 +170,9 @@
                 let first = selected == null;
                 for (let i = 0; i < n; ++i) {
                     for (let j = 0; j < m; ++j) {
-                        const x = ox + margin + j * (cellw + gap);
-                        const y = margin + i * (cellh + gap);
+                        const x = (ox + margin + j * (cellw + gap)) | 0;
+                        const y = (oy + margin + i * (cellh + gap)) | 0;
+
                         if (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh) {
                             if (selected == null) {
                                 selected = [i, j];
