@@ -100,6 +100,24 @@
             return [(width - w * (2 + (m - 1) * g + m)) / 2, (height - h * (2 * aspect + (n - 1) * aspect * g + n)) / 2, w, h, w, w * g, w * 1.1, h * 1.2];
         })();
 
+        class AABB {
+            constructor(x, y, w, h) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+            }
+
+            contains(x, y) {
+                if ('x' in x) {
+                    y = x.y;
+                    x = x.x;
+                }
+
+                return this.x <= x && this.y <= y && this.x + this.w >= x && this.y + this.h >= y;
+            }
+        }
+
         const grid = [];
         const cursor = { x: 0, y: 0 }
         let lastPath = null;
@@ -112,13 +130,92 @@
         let hintPath = null;
         let hintTime = -Infinity;
         let hintIndex = rnd(256);
-        let hintCooldown = 15000;
+        let hintCooldown = 20000;
+        let isPaused = false;
+        let pausedChange = -Infinity;
+
+        let pauseTileI = 0;
+        let pauseTileJ = 0;
 
         let down = false
         let selected = null;
 
         addEventListener('mousemove', e => { cursor.x = e.clientX; cursor.y = e.clientY })
         addEventListener('mousedown', () => down = true)
+
+        class Animated {
+            static instances = [];
+
+            #initial;
+            #target;
+            #value;
+            #duration;
+            #counter;
+
+            constructor(initial, duration) {
+                this.#initial = initial;
+                this.#target = initial;
+                this.#value = initial;
+                this.#duration = duration;
+                this.#counter = 0;
+
+                Animated.instances.push(this)
+            }
+
+            get value() { return this.#value; }
+
+            set(value) {
+                this.#initial = this.#value;
+                this.#counter = 0;
+                this.#target = value;
+            }
+
+            update(delta) {
+                this.#counter = Math.min(this.#duration, this.#counter + delta);
+                this.#value = this.#initial + (this.#target - this.#initial) * fade(this.#counter / this.#duration);
+            }
+        }
+
+        class Toggle {
+            #isOn = false;
+            #off;
+            #on;
+            #obj;
+
+            constructor(obj, off, on) {
+                this.#obj = obj;
+                this.#off = off;
+                this.#on = on;
+            }
+
+            set(value) {
+                if (this.#isOn != value) {
+                    this.#isOn = value
+                    this.#obj.set(value ? this.#on : this.#off)
+                }
+            }
+        }
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
+        const movesHintVisibility = new Animated(.2, 400);
+        const timerHintVisibility = new Animated(.2, 400);
+        const hintsHintVisibility = new Animated(.2, 400);
+
+        const movesToggle = new Toggle(movesHintVisibility, .2, .8);
+        const timerToggle = new Toggle(timerHintVisibility, .2, .8);
+        const hintsToggle = new Toggle(hintsHintVisibility, .2, .8);
+
+        const s = cellw / 2;
+        const x = width - ox - margin - s;
+        const y = oy + margin - s / 3.5 - s;
+
+        const movesHintBox = new AABB(ox + margin, oy - 1.3 * s + margin, 4.5 * s, s);
+        const timerHintBox = new AABB(width / 2 - 2 * s, oy - 1.3 * s + margin, 4 * s, s);
+        const hintsHintBox = new AABB(width - 5 * s - margin, oy - 1.3 * s + margin, 5 * s, s);
+
+        const hintButton = new AABB(x, y, s, s);
+        const pauseButton = new AABB(width / 2 + 2 * s, y, s, s);
 
         load();
 
@@ -165,8 +262,39 @@
 
         function update(delta) {
             ++frame;
-            runTime += delta;
-            if (down) {
+
+            if (!isPaused)
+                runTime += delta;
+
+            Animated.instances.forEach(instance => instance.update(delta));
+
+            const s = cellw / 2;
+            const x = ox + margin;
+            const y = oy + margin;
+
+            movesToggle.set(movesHintBox.contains(cursor));
+            timerToggle.set(timerHintBox.contains(cursor));
+            hintsToggle.set(hintsHintBox.contains(cursor));
+
+            if (down && pauseButton.contains(cursor)) {
+                isPaused = !isPaused;
+                pausedChange = frame;
+
+                if (isPaused) {
+
+                    pauseTileI = rnd(n)
+                    pauseTileJ = rnd(m)
+
+                    while (grid[pauseTileI][pauseTileJ] == null) {
+                        pauseTileI = rnd(n)
+                        pauseTileJ = rnd(m)
+                    }
+                } else {
+
+                }
+            }
+
+            else if (down) {
                 let first = selected == null;
                 for (let i = 0; i < n; ++i) {
                     for (let j = 0; j < m; ++j) {
@@ -196,11 +324,7 @@
 
                 if (!first) selected = null;
 
-                const x = width - ox - margin - cellw / 2;
-                const s = cellw / 2;
-                const y = oy + margin - s / 3.5 - s;
-
-                if (runTime - hintTime > hintCooldown && cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
+                if (runTime - hintTime > hintCooldown && hintButton.contains(cursor)) {
                     let hint = null;
                     if (hint = moves[hintIndex % moves.length]) {
                         if (JSON.stringify(hint) != JSON.stringify(hintPath))
@@ -366,7 +490,10 @@
                         const x = (ox + margin + j * (cellw + gap)) | 0;
                         const y = (oy + margin + i * (cellh + gap)) | 0;
 
-                        ctx.drawImage(grid[i][j], x, y);
+                        if ((isPaused && Math.abs(i - pauseTileI) + Math.abs(j - pauseTileJ) < (frame-pausedChange))||(!isPaused && Math.abs(i - pauseTileI) + Math.abs(j - pauseTileJ) > (frame-pausedChange)))
+                            ctx.drawImage(grid[pauseTileI][pauseTileJ], x, y);
+                        else
+                            ctx.drawImage(grid[i][j], x, y);
 
                         if ((selected && i == selected[0] && j == selected[1]) || (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh)) {
                             drawFrame(x, y, cellw, cellh, cellw / 30);
@@ -406,32 +533,48 @@
                 const s = cellw / 2;
                 const y = oy + margin - s / 3.5 - s;
 
-                roundedRect(ctx, x, y, s, s, s / 15);
-                ctx.fillStyle = 'ivory';
-                ctx.lineWidth = 4;
-                ctx.shadowColor = 'rgba(0,0,0, .8)';
-                ctx.shadowBlur = cellw / 10;
-                ctx.fill();
+                const hintReadiness = Math.min(1, (runTime - hintTime) / hintCooldown)
 
-                ctx.fillStyle = runTime - hintTime > hintCooldown ? 'black' : 'silver';
-                ctx.font = `${s}px bold Helvetica`;
-                let tw = ctx.measureText('?').width;
-                ctx.fillText('?', x + s / 2 - tw / 2, oy + margin - s / 2);
+                const grad = ctx.createLinearGradient(x, y, x, y + s);
 
-                ctx.fillStyle = 'rgba(255, 255, 255, .2)';
+                grad.addColorStop(Math.max(0, (1 - hintReadiness) - .05), 'silver')
+                grad.addColorStop(Math.min(1, (1 - hintReadiness) + .05), 'ivory');
+
+                drawButton(hintButton, '?', hintReadiness == 1 ? 'black' : 'silver', grad, hintReadiness == 1)
+                drawButton(pauseButton, '⏸', 'black', 'ivory', true);
 
                 const timer = (runTime / 60000 | 0).toString().padStart(2, 0) + ':' + (runTime % 60000 / 1000 | 0).toString().padStart(2, 0)
                 tw = ctx.measureText(timer).width;
+                ctx.fillStyle = `rgba(255, 255, 255, ${timerHintVisibility.value})`;
                 ctx.fillText(timer, (width - tw) / 2, oy + margin - s / 2);
+
+                ctx.fillStyle = `rgba(255, 255, 255, ${movesHintVisibility.value})`;
                 ctx.fillText(moves.length + ' moves', ox + margin, oy + margin - s / 2);
 
                 if (numHints) {
                     let tw = ctx.measureText(numHints + ' hints').width;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${hintsHintVisibility.value})`;
                     ctx.fillText(numHints + ' hints', x - tw - gap, oy + margin - s / 2);
                 }
 
-                if (runTime - hintTime > hintCooldown && cursor.x >= x && cursor.y >= y && cursor.x <= x + s && cursor.y <= y + s) {
-                    drawFrame(x, y, s, s, s / 15);
+                function drawButton(btn, text, fg, bg, hover) {
+                    roundedRect(ctx, btn.x, btn.y, btn.w, btn.h, s / 15);
+
+                    ctx.fillStyle = bg;
+                    ctx.lineWidth = 4;
+                    ctx.shadowColor = 'rgba(0,0,0, .5)';
+                    ctx.shadowBlur = s / 5;
+                    ctx.fill();
+
+                    ctx.fillStyle = fg;
+                    ctx.font = `${s}px bold Helvetica`;
+                    let tw = ctx.measureText(text).width;
+                    ctx.fillText(text, btn.x + btn.w / 2 - tw / 2, btn.y + btn.h - s / 5);
+
+                    if (hover && btn.contains(cursor)) {
+                        drawFrame(btn.x, btn.y, btn.w, btn.h, s / 15);
+                    }
+
                 }
 
                 ctx.restore();
