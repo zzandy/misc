@@ -1,19 +1,49 @@
 <!DOCTYPE html>
-<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" data-theme="light">
 
 <head>
     <meta charset="utf-8" />
     <title>Sim</title>
     <script src="lightue.min.js"></script>
     <style>
-        html,
-        body {
+        :root {
+            --grid-unit: 1rem;
+            --border-radius-base: 0.5rem;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
             line-height: 1.5rem;
         }
 
-        .line>div {
-            display: inline-block;
+        [data-theme="light"] {
+            --color-bg: #ffffff;
+            --color-fg: #000000;
+        }
+
+        [data-theme="dark"] {
+            --color-bg: #262626;
+            --color-fg: #aaa;
+            font-weight: 200;
+
+            button,
+            .group>button {
+                font-weight: 200;
+                background-color: #222;
+                color: var(--color-fg);
+                border-color: #111;
+            }
+
+            button:disabled,
+            .group>button:disabled {
+                color: #555
+            }
+        }
+
+        body {
+            background-color: var(--color-bg);
+            color: var(--color-fg);
+        }
+
+        .line {
+            display: flex;
         }
 
         .line *:not(:first-child) {
@@ -22,6 +52,8 @@
 
         button,
         .group>button {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+
             border-radius: 0;
             border: outset silver;
             border-width: 1px 0 1px 1px;
@@ -64,10 +96,7 @@
 </head>
 
 <body>
-
-
     <canvas id="graph" width="300" height="130">
-
     </canvas>
 
     <script name="loop" type="text/javascript">
@@ -159,7 +188,8 @@
                 agentLevelProd: 0,
                 agentLevelPeriod: 0,
                 agentLevelCooldown: 0,
-                agents: []
+                agents: [],
+                light: true,
             });
 
             function graph(color, style, scale) {
@@ -418,9 +448,8 @@
 
             let t = 0;
 
-            //addEventListener('wheel', e => { if (e.target.className == 'make-item') e.target.click() })
-
             Lightue({
+                theme: btn(() => state.light ? '☀️' : '🌙', toggleTheme),
                 balance: () => 'Balance: ' + nice(state.balance),
                 price: () => 'Price: ' + nice(price.getValue()),
                 inventory: () => 'In stock: ' + (state.inventory | 0) + ' / ' + state.storage,
@@ -441,7 +470,6 @@
                             produce(state.manualRate);
                         }),
                     span({
-                        //_style: 'padding-left: .5em',
                         $if: () => state.manualProd > 0,
                         $$: () => nice(state.manualProd) + ' per second'
                     })
@@ -596,6 +624,11 @@
                 return value == (value | 0)
                     ? value
                     : value.toFixed(2).toLocaleString();
+            }
+
+            function toggleTheme() {
+                state.light = !state.light;
+                document.querySelector("html").setAttribute("data-theme", state.light ? 'light' : 'dark');
             }
         })();
     </script>
