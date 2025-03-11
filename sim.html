@@ -136,7 +136,7 @@
             //   - storage at capacty warning 
 
             const { useState, button, div, span } = Lightue;
-            const pow = Math.pow;
+            const { pow, max } = Math;
 
             let record = 0;
 
@@ -146,13 +146,13 @@
             const incomeScale = graphScale();
             const graphs = {
                 util: graph('silver', 'widebars'),
-                waste: graph('purple', 'line'),
-                prod: graph('black', 'line', prodScale),
-                clean: graph('magenta', 'line', prodScale),
+                waste: graph('#481a8b', 'line'),
+                prod: graph('#1054b0', 'line', prodScale),
+                clean: graph('#e148ae', 'line', prodScale),
                 inc: graph('#da9100 ', 'bars', incomeScale),
-                sell: graph('navy', 'event'),
-                int: graph('green', 'bars', incomeScale),
-                bal: graph('green', 'line'),
+                sell: graph('#1054b0', 'event'),
+                int: graph('#5db614', 'bars', incomeScale),
+                bal: graph('#5db614', 'line', incomeScale),
             };
 
             const can = document.getElementById('graph');
@@ -164,9 +164,10 @@
                 clicks: stat()
             }
 
+            const staringBalance = 50;
             const state = useState({
                 inventory: 0,
-                balance: 50,
+                balance: staringBalance,
                 price: 1,
                 numAgents: 0,
                 agentLevel: 1,
@@ -184,12 +185,17 @@
 
                 clicksPerSec: 0,
                 totalClicks: 0,
+                totalEarned: 0,
+                totalProduced: 0,
+                totalWasted: 0,
+                maxBalance: staringBalance,
 
                 agentLevelProd: 0,
                 agentLevelPeriod: 0,
                 agentLevelCooldown: 0,
                 agents: [],
                 light: true,
+                lang: 'en'
             });
 
             function graph(color, style, scale) {
@@ -282,17 +288,112 @@
                 return 1000 * Math.pow(1.8, x - 1);
             }
 
-            const agentCount = upgradable(dt => state.numAgents += dt, t => t, t => 15 * pow(t, 1.13), () => 'Add agent');
-            const agentProdRate = upgradable(dt => state.agentLevelProd += dt, t => 10 + t * 1, t => 120 * pow(1.15, t), (_, next) => `Upgrade autoprodution rate to ${nice(next)}`);
-            const agentProdPeriod = upgradable(dt => state.agentLevelPeriod += dt, t => 500 + t * 10, t => 150 * pow(1.17, t), (_, next) => `Increase prod duration to ${nice(next / 1000)}s`);
+            let trans = {
+                'cz': {
+                    'Sell one': 'Prodat jeden',
+                    'Sell ten': 'Prodat deset',
+                    'Sell hundred': 'Prodat sto',
+                    'Sell thousand': 'Prodat tisíc',
+                    'Sell 10K': 'Prodat 10K',
+                    'Sell 100K': 'Prodat 100K',
+                    'Sell a million': 'Prodat milion',
+                    'Increase manual rate': 'Zvýšit míru ruční výroby',
+                    'Balance': 'Zůstatek',
+                    'Total earnings': 'Celkové výnosy',
+                    'Price': 'Cena',
+                    'In stock': 'Na skladě',
+                    'Waste': 'Odpad',
+                    'Automakers': 'Automatické výrobníky',
+                    'per second': 'za sekundu',
+                    'Interest': 'Zájem',
+                    'Make': 'Vyrobit',
+                    'Sell 1000s': 'Prodej po tisícovkách',
+                    'Sell 10s': 'Prodej po desítkách',
+                    'Sell 100s': 'Prodej po stovkách',
+                    'Sell 1M': 'Prodej po milionech',
+                    'Add': 'Přidat',
+                    'to storage capacity': 'ke skladovací kapacitě',
+                    'Add agent': 'Přidat agenta',
+                    'Upgrade autoproduction rate to': 'Zvýšit míru automatické produkce na',
+                    'Increase prod duration to': 'Zvýšit dobu trvání produkce na',
+                    'Decrease prod cooldown to': 'Snížení doby stání produkce na',
+                    'Marketing campain, increase price to': 'Marketingová kampaň, zvýšení ceny na',
+                    'New production record!!': 'Nový výrobní rekord!!',
+                }
+            }
 
-            const agentCooldownPeriod = upgradable(dt => state.agentLevelCooldown += dt, t => 5000 - t * 100, t => t < 50 ? 200 * pow(1.2, t) : Infinity, (_, next) => `Decrease prod cooldown to ${nice(next / 1000)}s`);
+            const words = {
+                'en': {
+                    1: "one",
+                    2: "two",
+                    3: "three",
+                    4: "four",
+                    5: "five",
+                    6: "six",
+                    7: "seven",
+                    8: "eight",
+                    9: "nine",
+                    10: "ten",
+                    11: "eleven",
+                    12: "twelve",
+                    13: "thirteen",
+                    14: "fourteen",
+                    15: "fifteen",
+                    16: "sixteen",
+                    17: "seventeen",
+                    18: "eighteen",
+                    19: "nineteen",
+                    20: "twenty"
+                },
 
-            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t, 1.4), (value, next) => `${nice(next)}%`);
-            const autosell = upgradable(dt => state.autosellLevel += dt, t => !!t * pow(10, t), t => !!t * 10 * pow(10, t) / 5, (value, next) => `${next}`);
-            const autosellRate = upgradable(dt => state.autosellRate += dt, t => t < 20 ? 20 - t : 1 / (2 + t - 20), t => autosellRatePrice(t + 1), (_, next) => next >= 1 ? `${next} seconds` : `${(1 / next) | 0} times per second`);
-            const storage = upgradable(dt => { if (dt > 0) state.storage += storageChange(state.storageLevel); return state.storageLevel += dt }, storageChange, t => storageChange(t - 1), (value, next) => `Add ${value} to storage capacity`);
-            const price = upgradable(dt => state.price += dt, t => Math.pow(1.025, t - 1), t => 10000 * (1 + (t - 1) / 2), (_, next) => `Marketing campain, increase price to ${nice(next)}`);
+                'cz': {
+                    1: "jeden",
+                    2: "dva",
+                    3: "tři",
+                    4: "čtyři",
+                    5: "pět",
+                    6: "šest",
+                    7: "sedm",
+                    8: "osm",
+                    9: "devět",
+                    10: "deset",
+                    11: "jedenáct",
+                    12: "dvanáct",
+                    13: "třináct",
+                    14: "čtrnáct",
+                    15: "patnáct",
+                    16: "šestnáct",
+                    17: "sedmnáct",
+                    18: "osmnáct",
+                    19: "devatenáct",
+                    20: "dvacet"
+                }
+            };
+
+            const missing = new Set()
+
+            function tr(text) {
+                return state.lang == 'en' ? text : trans[state.lang][text] || report(text)
+            }
+
+            function report(text) {
+                if (missing.has(text)) return;
+                missing.add(text)
+
+                return console.warn(`'${text}': '???',`);
+            }
+
+            const agentCount = upgradable(dt => state.numAgents += dt, t => t, t => 15 * pow(t, 1.13), () => tr('Add agent'));
+            const agentProdRate = upgradable(dt => state.agentLevelProd += dt, t => 10 + t * 1, t => 120 * pow(1.15, t + 1), (_, next) => `${tr('Upgrade autoproduction rate to')} ${nice(next)}`);
+            const agentProdPeriod = upgradable(dt => state.agentLevelPeriod += dt, t => 500 + t * 10, t => 150 * pow(1.17, t + 2), (_, next) => `${tr('Increase prod duration to')} ${nice(next / 1000)}s`);
+
+            const agentCooldownPeriod = upgradable(dt => state.agentLevelCooldown += dt, t => 5000 - t * 100, t => t < 50 ? 200 * pow(1.2, t) : Infinity, (_, next) => `${tr('Decrease prod cooldown to')} ${nice(next / 1000)}s`);
+
+            const interest = upgradable(dt => state.interestLevel += dt, t => t * 0.2, t => 1000 * pow(t + 1, 1.3), (value, next) => `${nice(next)}%`);
+            const autosell = upgradable(dt => state.autosellLevel += dt, t => !!t * pow(10, t), t => !!t * 10 * pow(10, t + 1) / 5, (value, next) => `${next}`);
+            const autosellRate = upgradable(dt => state.autosellRate += dt, t => t < 20 ? 20 - t : 1 / (2 + t - 20), t => autosellRatePrice(t + 1), (_, next) => next >= 1 ? `${next} ${tr('seconds')}` : `${(1 / next) | 0} ${tr('times per second')}`);
+            const storage = upgradable(dt => { if (dt > 0) state.storage += storageChange(state.storageLevel); return state.storageLevel += dt }, storageChange, t => storageChange(t - 1), (value, next) => `${tr('Add')} ${value} ${tr('to storage capacity')}`);
+            const price = upgradable(dt => state.price += dt, t => Math.pow(1.025, t - 1), t => 10000 * (1 + (t - 1) / 2), (_, next) => `${tr('Marketing campain, increase price to')} ${nice(next)}`);
 
             const noteAutosell = note();
             const noteInterest = note();
@@ -309,6 +410,9 @@
 
                     let sale = n * price.getValue();
                     state.balance += sale;
+
+                    state.maxBalance = max(state.balance, state.maxBalance)
+                    state.totalEarned += sale;
 
                     graphs.inc.spot += sale;
 
@@ -331,6 +435,9 @@
 
                 state.waste += wasted - cleanup;
                 state.inventory += produced;
+
+                state.totalProduced += produced;
+                state.totalWasted += wasted - cleanup;
             }
 
             loop(60, delta => {
@@ -357,7 +464,7 @@
 
                 if (state.manualProd > 10 && state.manualProd > record) {
                     record = state.manualProd;
-                    noteRecord.show('New production record!!');
+                    noteRecord.show(tr('New production record!!'));
                 }
 
                 if (state.autosellLevel > 0) {
@@ -366,7 +473,7 @@
                         const sellAmount = Math.min(state.inventory, autosell.getValue());
                         if (sell(sellAmount)) {
                             graphs.sell.spot = 1
-                            noteAutosell.show('Autosold ' + nice(sellAmount) + ' items for ' + nice(sellAmount * price.getValue()) + ' moneys');
+                            noteAutosell.show(tr('Autosold') + ' ' + nice(sellAmount) + ' ' + tr('items for') + ' ' + nice(sellAmount * price.getValue()) + ' ' + tr('moneys'));
                         }
                         else {
                             graphs.sell.spot = -1;
@@ -442,59 +549,61 @@
                 graphs.int.spot += int;
 
                 if (int > 0) {
-                    noteInterest.show('Interest ' + (int > 5 ? Math.round(int) : int.toFixed(3)));
+                    noteInterest.show(`${tr('Interest')} ` + (int > 5 ? Math.round(int) : int.toFixed(3)));
                 }
             }, () => { });
 
             let t = 0;
 
             Lightue({
-                theme: btn(() => state.light ? '☀️' : '🌙', toggleTheme),
-                balance: () => 'Balance: ' + nice(state.balance),
-                price: () => 'Price: ' + nice(price.getValue()),
-                inventory: () => 'In stock: ' + (state.inventory | 0) + ' / ' + state.storage,
+                theme: div.group([btn(() => state.light ? '☀️' : '🌙', toggleTheme), btn('🇬🇧', () => state.lang = 'en', () => state.lang != 'en'), btn('🇨🇿', () => state.lang = 'cz', () => state.lang != 'cz')]),
+                balance: [
+                    span({ $$: () => `${tr('Balance')}: ` + nice(state.balance) }),
+                    span({ $if: () => state.totalEarned > 10, $$: () => `; ${tr('Total earnings')}: ` + nice(state.totalEarned) })
+                ],
+                price: () => `${tr('Price')}: ` + nice(price.getValue()),
+                inventory: () => `${tr('In stock')}: ` + (state.inventory | 0) + ' / ' + state.storage,
                 wast: {
-                    $$: () => `Waste: ${state.waste | 0}${nice(state.cleanup) ? `; ${nice(state.cleanup)} production goes towards cleanup` : ''}`,
-                    $if: () => state.waste > 0.008
+                    $$: () => `${tr('Waste')}: ${state.waste | 0}${state.cleanup > 0.01 ? `; ${nice(state.cleanup)} ${tr('production goes towards cleanup')}` : ''}`,
+                    $if: () => state.totalWasted > 0
                 },
-                numAgents: () => 'Automakers: ' + nice(state.numAgents * agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())) + ' per second, ' + state.numAgents + '@' + nice(agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())),
+                numAgents: () => `${tr('Automakers')}: ` + nice(state.numAgents * agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())) + ' ' + tr('per second') + ' ' + state.numAgents + '@' + nice(agentProdRate.getValue() * agentProdPeriod.getValue() / (agentProdPeriod.getValue() + agentCooldownPeriod.getValue())),
                 intr: {
-                    $$: () => 'Interest: ' + nice(interest.getValue()) + '%',
+                    $$: () => `${tr('Interest')}: ` + nice(interest.getValue()) + '%',
                     $if: () => state.interestLevel > 0
                 },
 
                 make: [
-                    btn(() => `Make ${nice(state.manualRate)
-                        }`, () => {
-                            stats.manualProd.spot += state.manualRate;
-                            produce(state.manualRate);
-                        }),
+                    btn(() => `${tr('Make')} ${word(state.manualRate)}`, () => {
+                        stats.manualProd.spot += state.manualRate;
+                        produce(state.manualRate);
+                    }),
                     span({
                         $if: () => state.manualProd > 0,
-                        $$: () => nice(state.manualProd) + ' per second'
+                        $$: () => nice(state.manualProd) + ' ' + tr('per second')
                     })
                 ],
 
                 sell: div.group([
-                    btn("Sell one", () => sell(1), () => state.inventory >= 1, () => !has('Sell 1000s')),
-                    btn("Sell ten", () => sell(10), () => state.inventory >= 10, () => has('Sell 10s') && !has('Sell 10K')),
-                    btn("Sell hundred", () => sell(100), () => state.inventory >= 100, () => has('Sell 100s') && !has('Sell 100K')),
-                    btn("Sell thousand", () => sell(1000), () => state.inventory >= 1000, () => has('Sell 1000s')),
-                    btn("Sell 10K", () => sell(10000), () => state.inventory >= 10000, () => has('Sell 10K')),
-                    btn("Sell 100K", () => sell(100000), () => state.inventory >= 100000, () => has('Sell 100K')),
-                    btn("Sell a million", () => sell(1000000), () => state.inventory >= 1000000, () => has('Sell 1M')),
+                    btn(() => tr("Sell one"), () => sell(1), () => state.inventory >= 1, () => !has('Sell 1000s')),
+                    btn(() => tr("Sell ten"), () => sell(10), () => state.inventory >= 10, () => has('Sell 10s') && !has('Sell 10K')),
+                    btn(() => tr("Sell hundred"), () => sell(100), () => state.inventory >= 100, () => has('Sell 100s') && !has('Sell 100K')),
+                    btn(() => tr("Sell thousand"), () => sell(1000), () => state.inventory >= 1000, () => has('Sell 1000s') && !has('Sell 1M')),
+                    btn(() => tr("Sell 10K"), () => sell(10000), () => state.inventory >= 10000, () => has('Sell 10K')),
+                    btn(() => tr("Sell 100K"), () => sell(100000), () => state.inventory >= 100000, () => has('Sell 100K')),
+                    btn(() => tr("Sell a million"), () => sell(1000000), () => state.inventory >= 1000000, () => has('Sell 1M')),
                 ]),
 
                 man: div.group([
-                    upgrade('Increase manual rate', () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate),
-                    upgradeObj(storage)
+                    upgrade(tr('Increase manual rate'), () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate, () => state.totalProduced > 200),
+                    upgradeObj(storage, () => state.totalProduced > 2000)
                 ]),
 
                 aut: div.group([
-                    upgradeObj(agentCount),
-                    upgradeObj(agentProdRate),
-                    upgradeObj(agentProdPeriod),
-                    upgradeObj(agentCooldownPeriod),
+                    upgradeObj(agentCount, () => state.totalProduced > 20),
+                    upgradeObj(agentProdRate, () => state.numAgents > 10),
+                    upgradeObj(agentProdPeriod, () => state.numAgents > 25),
+                    upgradeObj(agentCooldownPeriod, () => state.numAgents > 50),
                 ]),
 
                 sells: div.group([
@@ -506,14 +615,14 @@
                     feat('Sell 1M', 7000000, () => has('Sell 10K'))
                 ]),
 
-                prc: upgradeObj(price),
-                int: div.line([() => `Interest ${nice(interest.getValue())}% `, upgradeObj(interest)]),
+                prc: upgradeObj(price, () => state.maxBalance > 12000),
+                int: div.line({ $if: () => state.totalEarned > 10000 }, [() => `${tr('Interest')} ${nice(interest.getValue())}% `, upgradeObj(interest)]),
 
-                autosell: div.line([
-                    () => `Autosell ${autosell.getValue()} `,
+                autosell: div.line({ $if: () => state.totalProduced > 5000 }, [
+                    () => `${tr('Autosell')} ${autosell.getValue()} `,
                     upgradeObj(autosell),
-                    () => autosellRate.getValue() >= 1 ? `every ${autosellRate.getValue()} seconds`
-                        : `${(1 / autosellRate.getValue()) | 0} times per second`,
+                    () => autosellRate.getValue() >= 1 ? `${tr('every')} ${autosellRate.getValue()} ${tr('seconds')}`
+                        : `${(1 / autosellRate.getValue()) | 0} ${tr('times per second')}`,
 
                     upgradeObj(autosellRate),
                 ]),
@@ -521,8 +630,8 @@
                 notes: state.notes
             });
 
-            function upgradeObj(obj) {
-                return upgrade(obj.getLabel, obj.getUpgradePrice, obj.upgrade);
+            function upgradeObj(obj, condition) {
+                return upgrade(obj.getLabel, obj.getUpgradePrice, obj.upgrade, condition);
             }
 
             function upgradable(getSetTier, tierToValue, tierToPrice, labelFn) {
@@ -586,23 +695,28 @@
             }
 
             function has(feature) {
-                return state.features.includes(feature);
+                return state.features.includes(tr(feature));
             }
 
             function feat(title, price, offerIf) {
-                return btn(title + ' (' + price + ')', () => {
-                    state.features.push(title);
-                }, () => state.balance >= price, () => !has(title) && (!offerIf || offerIf()))
+                return btn(tr(title) + ' (' + price + ')',
+                    () => {
+                        state.features.push(tr(title));
+                    },
+                    () => state.balance >= price,
+                    () => !has(title) && (!offerIf || offerIf()))
             }
 
-            function upgrade(title, getNextPrice, onBuy) {
+            function upgrade(title, getNextPrice, onBuy, condition) {
+
+                let startPrice = getNextPrice();
                 return btn(() => `${typeof title === "function" ? title() : title} (${nice(getNextPrice())})`,
                     () => {
                         state.balance -= getNextPrice();
                         onBuy();
                     },
                     () => getNextPrice() <= state.balance,
-                    () => isFinite(getNextPrice()));
+                    () => (!condition || condition()) && startPrice < state.maxBalance * .8 && isFinite(getNextPrice()));
             }
 
             function btn(title, onclick, activeIf, showIf) {
@@ -624,6 +738,10 @@
                 return value == (value | 0)
                     ? value
                     : value.toFixed(2).toLocaleString();
+            }
+
+            function word(value) {
+                return words[state.lang][value] || value;
             }
 
             function toggleTheme() {
