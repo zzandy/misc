@@ -217,14 +217,34 @@
         let rows = 8;
         let field = [];
 
+
+        // [layouts, ...shapes]
+        // circle,coin,triangle,t2,hex,h2,c,c2,square,diamond,x,cross,slash,sl2,gem,bolt,star,star2,star3,clubs,heart,asterisk,y,tripl,eq,pause
+        const presets = [
+            [[1, 2], 'y', 'tripl', 'asterisk'],
+            [[0], 'pause', 'eq', 'square'],
+            [[2], 'h2', 'asterisk'],
+            [[1, 2], 'h2', 'hex'],
+            [null, 'star', 'star3'],
+            [[0], 'square', 'diamond'],
+            [[0], 'diamond', 'star2'],
+            [null, 'x', 'cross'],
+            [null, 'c', 'c2', 'circle', 'coin'],
+            [null, 'triangle', 't2', 'y', 'tripl'],
+            [null, 'slash', 'sl2'],
+            [null, 'triangle', 'heart', 'gem']
+        ];
+
         function rebuild() {
             redraw = true;
             field = [];
 
-            let oddity = rnd(['shape', 'shape', 'shape', 'color', 'color', 'fill', 'size']);
-            let layout = layouts[rnd([0, 0, 0, 1, 2])]
+            const [presetLayouts, ...presetShapes] = rnd(100) < 40 ? rnd(presets) : [];
 
-            const shape = pick(oddity == 'shape', Object.values(shapes), rnd(100) < 20)
+            const oddity = presetShapes.length ? 'shape' : rnd(['shape', 'shape', 'shape', 'color', 'color', 'fill', 'size']);
+            const layout = layouts[rnd(presetLayouts ?? [0, 0, 1, 2])]
+
+            const shape = pick(oddity == 'shape', presetShapes.length && presetShapes.map(k => shapes[k]) || Object.values(shapes), rnd(100) < 20)
             const color = pick(oddity == 'color', colors, true || rnd(100) < 20);
             const scale = pick(oddity == 'size', oddity == 'size' ? [1, .5, .5, .5, .5] : [1], rnd(100) < 5);
             const fill = pick(oddity == 'fill', [true, false], false);
