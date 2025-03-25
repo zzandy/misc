@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" style="background-color: white;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Match 3</title>
+</head>
+
+<body>
+    <script name="canvas" type="text/javascript">
+        function addCanvas(w, h) {
+            const canvas = document.createElement('canvas');
+
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            canvas.style.position = 'absolute';
+            canvas.style.top = '0';
+            canvas.style.left = '0';
+
+            document.body.appendChild(canvas);
+
+            return canvas.getContext('2d', { alpha: false });
+        }
+    </script>
+
+    <script name="loop" type="text/javascript">
+        function loop(fps, update, render) {
+
+            let targetDelay = 1000 / fps;
+
+            let time = targetDelay + 1;
+
+            let doRender = true;
+
+            let then = performance.now();
+
+            requestAnimationFrame(frame);
+
+            function frame() {
+                let now = performance.now();
+                time += now - then;
+                then = now;
+
+                let numLoops = 0;
+
+                while (time > targetDelay) {
+                    time -= targetDelay;
+                    update(targetDelay);
+                    doRender = true;
+
+                    if (++numLoops > 50) {
+                        console.log('overload')
+                        time = 0;
+                        break;
+                    }
+                }
+
+                if (doRender) {
+                    doRender = false;
+                    render();
+                }
+
+                requestAnimationFrame(frame);
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
+        const sq32 = Math.sqrt(3) / 2;
+        const tau = Math.PI * 2;
+        const colors = ["#009e73", "#0062b2", "#56c8e9", "#f03442", "#e69f00", "#d55e00", "#cc79a7"];
+
+        const ctx = addCanvas();
+        ctx.circle = function (x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, tau);
+            ctx.closePath();
+        }
+
+        class Cell {
+            x = 0;
+            y = 0;
+            color = 'magenta';
+            size = 1;
+
+            constructor(x, y, color, size) {
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.size = size;
+            }
+        }
+
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        const side = 5;
+        const numColumns = side * 2 - 1;
+
+        const size = (() => {
+            const aspect = w / 2;
+
+            return aspect < sq32
+                ? w / (numColumns * sq32)
+                : h / numColumns;
+
+
+        })();
+
+        const cx = w / 2;
+        const cy = h / 2;
+
+        const debug = [];
+
+        const columns = [];
+        for (let i = 0; i < numColumns; ++i) {
+            const column = [];
+
+            const columnOffset = i - side + 1;
+            const columShift = Math.abs(columnOffset);
+            const x = cx + columnOffset * size * sq32;
+
+            for (let j = 0; j < numColumns - columShift; ++j) {
+                const y = cy + (j - (numColumns - columShift) / 2 + .5) * size;
+                column.push(new Cell(x, y, rnd(colors), size * .48));
+            }
+
+            columns.push(column)
+        }
+
+        findClusters();
+
+        const cursor = { x: 0, y: 0 }
+        debug.push(cursor)
+        let isDown = false;
+        let isUp = false;
+
+        let hover = null;
+        let selected = null;
+
+        ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX; cursor.y = clientY })
+        ctx.canvas.addEventListener('mousedown', () => isDown = true);
+        ctx.canvas.addEventListener('mouseup', () => isUp = true);
+        ctx.canvas.addEventListener('mouseleave', () => isUp = true);
+
+        loop(60, update, render)
+
+        function update(delta) {
+            hover = null;
+
+            for (let column of columns) {
+                for (let cell of column) {
+                    if (distance(cell, cursor) < cell.size) {
+                        hover = cell;
+                        if (isDown) selected = cell;
+                    }
+                }
+            }
+
+            if (isUp) {
+                if (selected && hover && selected != hover) swap();
+                selected = null;
+            }
+
+            isDown = false;
+            isUp = false;
+        }
+
+        function swap() { }
+
+        function findClusters() {
+
+            const clusters = [];
+            let clusterid = 0;
+
+            const transformations = [
+                (i, j) => [i, j]
+            ]
+
+            for (let z = 0; z < 3; ++z) {
+                for (let i = 0; i < numColumns; ++i) {
+                    const column = columns[i]
+                    const cc = [0];
+                    let len = 0;
+                    for (let j = 1; j < column.length; ++j) {
+                        if (z == 0)
+                            cc.push(0)
+
+                        if (column[j].color == column[j - 1].color) {
+                            len = len == 0 ? 2 : (len + 1);
+                        }
+
+                        // else or if at the end
+                        if (column[j].color != column[j - 1].color || j == column.length - 1) {
+                            if (len > 2) {
+
+                                let cid = ++clusterid;
+                                for (let k = 0; k < len; ++k) {
+                                    cc[j - k - 1] = cid;
+                                }
+                            }
+
+                            len = 0;
+                        }
+                    }
+
+                    if (z == 0)
+                        clusters.push(cc)
+                }
+            }
+
+            console.log(clusters);
+        }
+
+        function distance(p1, p2) {
+            const dx = p2.x - p1.x;
+            const dy = p2.y - p1.y;
+            return Math.sqrt(dx * dx + dy * dy)
+        }
+
+        function render() {
+            ctx.clearRect(0, 0, w, h);
+
+            for (let column of columns)
+                for (let cell of column) {
+                    drawCell(cell);
+
+                    if (cell == hover) {
+                        ctx.circle(cell.x, cell.y, cell.size);
+
+                        ctx.strokeStyle = 'white'
+                        ctx.stroke();
+                    }
+                }
+
+            ctx.fillStyle = 'magenta';
+            for (const { x, y, lable } of debug) {
+                ctx.fillRect(x, y - 10, 1, 20)
+                ctx.fillRect(x - 10, y, 20, 1)
+
+                if (lable) {
+                    ctx.fillText(lable, x + 2, y - 2)
+                }
+            }
+        }
+
+        function drawCell({ x, y, color, size }) {
+            ctx.save();
+
+            ctx.translate(x, y);
+            ctx.fillStyle = color;
+            ctx.circle(0, 0, size);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        function rnd() {
+            switch (arguments.length) {
+                case 1:
+                    if (arguments[0] instanceof Array)
+                        return arguments[0][Math.floor(Math.random() * arguments[0].length)];
+                    else return (arguments[0] * Math.random()) | 0;
+                case 2:
+                    return (arguments[0] + Math.random() * (arguments[1] - arguments[0])) | 0;
+                case 0:
+                default:
+                    return Math.random();
+            }
+        }
+
+        function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    </script>
+</body>
+
+</html>
