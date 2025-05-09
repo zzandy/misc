@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml" style="background-color: white;">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Ant</title>
+</head>
+
+<body>
+    <script type="text/javascript">
+        function addCanvas(w, h, dontAdd) {
+            const canvas = document.createElement('canvas');
+
+            canvas.width = w;
+            canvas.height = h;
+
+            if (!dontAdd)
+                document.body.appendChild(canvas);
+
+            return canvas.getContext('2d', { alpha: false });
+        }
+
+        function loop(fps, init, update, render) {
+
+            let targetDelay = 1000 / fps;
+            let world = init();
+
+            let time = targetDelay + 1;
+
+            let doRender = true;
+
+            let then = performance.now();
+
+            requestAnimationFrame(frame);
+
+            function frame() {
+                let now = performance.now();
+                time += now - then;
+                then = now;
+
+                let numLoops = 0;
+
+                while (time > targetDelay) {
+                    time -= targetDelay;
+                    world = update(world);
+                    doRender = true;
+
+                    if (++numLoops > 50) {
+                        console.log('overload')
+                        time = 0;
+                        break;
+                    }
+                }
+
+                if (doRender) {
+                    doRender = false;
+                    render(world);
+                }
+
+                requestAnimationFrame(frame);
+            }
+        }
+    </script>
+
+    <script type="text/javascript">
+
+        class Button {
+            static n = 0;
+            static size = 32;
+
+            constructor(title, fillStyle, generator) {
+                this.title = title;
+                this.fillStyle = fillStyle;
+                this.generator = generator;
+
+                this.x = 1.3 * Button.n * Button.size + Button.size / 2;
+                this.y = Button.size / 2;
+
+                this.w = this.h = Button.size;
+
+                ++Button.n;
+            }
+
+            isOver(x, y) {
+                return this.x <= x && this.x + this.w >= x && this.y <= y && this.y + this.h >= y
+            }
+        }
+        const dx = [0, 1, 1, 1, 0, -1, -1, -1];
+        const dy = [-1, -1, 0, 1, 1, 1, 0, -1];
+
+        const options = [0, 1, -1, 2, -2, 4];
+        const palette = [
+            
+            [255, 0, 0],
+            [255, 141, 0],
+            [255, 219, 0],
+            [0, 214, 25],
+            [0, 159, 255]
+        ];
+
+
+        loop(2000, init, update, render);
+
+        function init() {
+            const [w, h] = [window.innerWidth, window.innerHeight];
+            const ctx = addCanvas(w, h);
+
+            ctx.canvas.style.position = 'absolute';
+            ctx.canvas.style.top = '0';
+            ctx.canvas.style.left = '0';
+
+            ctx.imageSmoothingEnabled = false;
+
+            const k = 6;
+            const [wid, hei] = [w / k | 0, h / k | 0];
+            const buf = addCanvas(wid, hei, true);
+            const img = buf.getImageData(0, 0, wid, hei);
+
+            const numOptions = 2 + rnd(4);
+
+            let rules = shuffle(options).slice(0, numOptions);
+            while (rules[0] % 4 == 0) rules = shuffle(options).slice(0, numOptions);
+
+            const transitions = shuffle(rules.map((_, i) => i));
+            while (transitions.some((t, i) => t == i)) shuffle(transitions);
+
+            const ants = [[rnd(wid), rnd(hei), rnd(4) * 2], [rnd(wid), rnd(hei), rnd(4) * 2], [rnd(wid), rnd(hei), rnd(4) * 2]];
+const colors = [[0,0,0]].concat(shuffle(palette).slice(0,numOptions-1))
+            const buttons = colors.filter((_, i) => i < numOptions).map((col, i) => new Button('', `rgb(${col[0]}, ${col[1]}, ${col[2]})`, col));
+
+            const mouse = { isDown: false, x: 0, y: 0 }
+            const world = {
+                tick: 0, ctx, buf, img, renderWidth: w, renderHeight: h, simulationWidth: wid,
+                simulationHeight: hei, buttons, activeButton: 0, mouse, lastMouse: [mouse.x, mouse.y],
+                rules, colors, transitions, ants
+            };
+
+            let isMouseDown = false;
+
+            ctx.canvas.addEventListener('click', e => {
+                for (let i in buttons) {
+                    let button = buttons[i];
+                    if (i != world.activeButton && button.isOver(e.clientX, e.clientY)) {
+                        world.activeButton = i;
+                        return;
+                    }
+                }
+            });
+
+            ctx.canvas.addEventListener('mousedown', e => {
+                for (const button of buttons)
+                    if (button.isOver(e.clientX, e.clientY)) return;
+                mouse.isDown = true;
+            });
+
+            ctx.canvas.addEventListener('mouseup', e => {
+                mouse.isDown = false;
+            });
+
+            ctx.canvas.addEventListener('mouseenter', e => {
+                if (mouse.isDown && e.buttons != 1)
+                    mouse.isDown = false;
+            });
+
+            ctx.canvas.addEventListener('mousemove', e => {
+                mouse.x = e.clientX / k | 0;
+                mouse.y = e.clientY / k | 0;
+            });
+            window.world = world;
+            return world;
+        }
+
+        function update(world) {
+            ++world.tick;
+            const { mouse, lastMouse, tick, simulationWidth: w, simulationHeight: h, next, counters, rules, ants, transitions, colors, img, simulationWidth: wid,
+                simulationHeight: hei } = world;
+
+            if (mouse.isDown) {
+                for (let [x, y] of plotLine(mouse.x, mouse.y, lastMouse[0], lastMouse[1])) {
+                    add(img.data, wid, x, y, world.buttons[world.activeButton].generator);
+                }
+            }
+
+            lastMouse[0] = mouse.x;
+            lastMouse[1] = mouse.y;
+
+            for (let ant of ants) {
+                const [x, y, dir] = ant;
+
+                let idx = (y * wid + x) * 4;
+
+                let [r, g, b] = [img.data[idx], img.data[idx + 1], img.data[idx + 2]];
+
+                let rule = undefined;
+                let cid = 0;
+                for (let [xr, xg, xb] of colors) {
+                    if (r == xr && g == xg && b == xb) {
+                        rule = cid;
+                        break;
+                    }
+                    ++cid;
+                }
+
+                if (rule !== undefined) {
+                    [img.data[idx], img.data[idx + 1], img.data[idx + 2]] = colors[transitions[rule]];
+                    ant[2] = (dir + rules[rule] + 8) % 8;
+                    ant[0] = (ant[0] + dx[ant[2]] + wid) % wid;
+                    ant[1] = (ant[1] + dy[ant[2]] + hei) % hei;
+                }
+            }
+
+            return world;
+        }
+
+        function render(world) {
+            const { ctx, img, buf, renderWidth: w, renderHeight: h, ants, k } = world;
+
+            buf.putImageData(img, 0, 0);
+
+            ctx.drawImage(buf.canvas, 0, 0, w, h);
+            ctx.strokeStyle = 'maroon';
+            for (let [x, y] of ants) {
+                ctx.strokeRect(x * k, y * k, k, k)
+            }
+
+
+            i = 0;
+            for (let button of world.buttons) {
+                ctx.fillStyle = button.fillStyle;
+                ctx.fillRect(button.x, button.y, button.w, button.h);
+
+                ctx.strokeStyle = i++ == world.activeButton
+                    ? 'white'
+                    : '#555';
+
+                ctx.strokeRect(button.x + .5, button.y + .5, button.w, button.h);
+            }
+        }
+
+        function add(data, w, x, y, type, counters) {
+
+            if (x >= 0 && x < w && y >= 0 && y * w + x < data.length / 4) {
+                let idx = (y * w + x) * 4;
+                [data[idx], data[idx + 1], data[idx + 2]] = type;
+            }
+
+
+        }
+
+        function rnd(a) {
+            return (a * Math.random()) | 0;
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function plotLine(x0, y0, x1, y1) {
+            const dx = Math.abs(x1 - x0)
+            const sx = x0 < x1 ? 1 : -1
+            const dy = -Math.abs(y1 - y0)
+            const sy = y0 < y1 ? 1 : -1
+            let error = dx + dy
+
+            const line = [];
+
+            while (true) {
+                line.push([x0, y0]);
+                if (x0 == x1 && y0 == y1) break
+                e2 = 2 * error
+                if (e2 >= dy) {
+                    if (x0 == x1) break
+                    error = error + dy
+                    x0 = x0 + sx
+                }
+                if (e2 <= dx) {
+                    if (y0 == y1) break
+                    error = error + dx
+                    y0 = y0 + sy
+                }
+            }
+
+            return line;
+        }
+    </script>
+</body>
+
+</html>
