@@ -76,9 +76,7 @@
 
         const gridStep = 128;
         const cellSize = gridStep * .9;
-        let k = 6;
-        const ctx = fullscreenCanvas(k);
-        ctx.imageSmoothingEnabled = false;
+        const ctx = fullscreenCanvas();
 
         const [ox, oy] = [ctx.canvas.width / 2, ctx.canvas.height / 2];
 
@@ -103,13 +101,22 @@
         const LEFT = 3
         const dirs = ['TOP', 'RIGHT', 'BOTTOM', 'LEFT']
 
+        const ENABLE_CLEAN = Symbol('clean');
         const ENABLE_ROLL_OTHERS = Symbol('enable roll others');
         const ENABLE_EDGE_BONUS = Symbol('enable edge bonus');
         const ENABLE_AUTOROLL = Symbol('enable auto roll');
         const ENABLE_MEGADIE = Symbol('enable megadie');
 
-        const actions = []
         let action = null;
+        const actions = []
+
+        const commands = {
+            'Escape': () => {
+                action = null;
+            }
+        };
+
+        let toggle = false;
         const cells = [];
         class Cell {
             constructor(pos, size, dir) {
@@ -195,25 +202,35 @@
             set value(v) { this._value = v }
 
             roll() {
-                if (this.state != IDLE) return;
-
                 if (click && this.bb.contains(cursor)) {
+                    if (action == ENABLE_CLEAN) {
+                        this.edgeBonus = false;
+                        this.rollOthers = false;
+                        this.autoRoll = false;
+                        score -= actions.filter(a => a.symbol == action)[0].use();
+                        action = null;
+                    }
                     if (action == ENABLE_EDGE_BONUS && this.autoRoll == false && this.rollOthers == false && this.edgeBonus == false) {
                         this.edgeBonus = true;
+                        score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                     }
                     if (action == ENABLE_ROLL_OTHERS && this.autoRoll == false && this.rollOthers == false) {
                         this.edgeBonus = false;
                         this.rollOthers = true;
+                        score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                     }
                     if (action == ENABLE_AUTOROLL && this.autoRoll == false) {
                         this.edgeBonus = false;
                         this.rollOthers = false;
                         this.autoRoll = true;
+                        score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                     }
                 }
+
+                if (this.state != IDLE) return;
 
                 sound();
 
@@ -292,9 +309,10 @@
         }
 
         class Action {
-            constructor(symbol, label, x, color, initialPrice, inflationFactor, pipColor) {
+            constructor(symbol, label, code, x, color, initialPrice, inflationFactor, pipColor) {
                 this.symbol = symbol;
                 this.label = label;
+                this.code = code;
                 this.color = color;
                 this.pipColor = pipColor || 'white';
                 this.price = initialPrice
@@ -307,11 +325,13 @@
 
             click() {
                 if (action || score < this.price) return;
-
-                score -= this.price;
-                this.price = this.price * this.inflationFactor | 0;
-
                 action = this.symbol;
+            }
+
+            use() {
+                const p = this.price;
+                this.price = this.price * this.inflationFactor | 0;
+                return p;
             }
 
             draw(btn) {
@@ -320,9 +340,16 @@
 
                 drawDice(ctx, 5, btn.bb.w, this.color, this.pipColor)
 
-                ctx.fillStyle = action || score < this.price ? 'grey' : 'white';
+                ctx.fillStyle = action && action != this.symbol ? 'grey'
+                    : action && action == this.symbol ? (toggle > 10 ? 'grey' : 'white')
+                        : score < this.price ? 'grey' : 'white'
+
+                toggle = (toggle + 1) % 20;
                 ctext(this.label, 0, -btn.bb.w / 3, 0);
                 ctext(this.price, 0, btn.bb.w / 3, 0);
+
+                ctx.font = '12pt Georgia';
+                ctext(this.code, 0, btn.bb.w * .7, 0)
 
                 ctx.restore();
             }
@@ -330,13 +357,17 @@
 
         let actionCursor = cellSize;
 
-        function addAction(symbol, label, color, initialPrice, inflationFactor, pipColor) {
-            actions.push(new Action(symbol, label, actionCursor += (2 * btnSize), color, initialPrice, inflationFactor, pipColor));
+        function addAction(code, symbol, label, color, initialPrice, inflationFactor, pipColor) {
+            const action = new Action(symbol, label, code.replace('Key', ''), actionCursor += (2 * btnSize), color, initialPrice, inflationFactor, pipColor);
+            actions.push(action);
+
+            commands[code] = () => { action.click() }
         }
 
-        addAction(ENABLE_EDGE_BONUS, 'Edge', '#262ae1', 50, 1.1);
-        addAction(ENABLE_ROLL_OTHERS, 'Chain', '#b10e0a', 100, 1.15);
-        addAction(ENABLE_AUTOROLL, 'Auto', '#d19002', 500, 1.3, '#b10e0a');
+        addAction('KeyZ', ENABLE_CLEAN, 'Clean', 'white', 100, 1.05);
+        addAction('KeyX', ENABLE_EDGE_BONUS, 'Edge', '#262ae1', 50, 1.1);
+        addAction('KeyC', ENABLE_ROLL_OTHERS, 'Chain', '#b10e0a', 100, 1.15);
+        addAction('KeyV', ENABLE_AUTOROLL, 'Auto', '#d19002', 750, 1.35, '#b10e0a');
         //addAction(ENABLE_MEGADIE, 'MEGA', 'black', 500, 1.2, 'white');
 
         const ui = [new Button(new Point(ox - uiLine, -oy + uiLine), drawMute, toggleMute)];
@@ -347,13 +378,14 @@
         let click = false;
         ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX - ox, cursor.y = clientY - oy })
         addEventListener('mousedown', () => click = true)
+        addEventListener('keydown', ({ code }) => { if (code in commands) commands[code]() });
 
         const rollAnimDuration = 150;
         const rollAnimTimes = 10;
 
         let buyDiePrice = 10;
         let buyDieInflation = 1.05;
-        let score = buyDiePrice;
+        let score = buyDiePrice * 100;
 
         let scoreShift = new Value(0);
         let sprites = [];
@@ -362,7 +394,7 @@
             die.tilt.tick(delta);
             die.scale.tick(delta);
 
-            if (die.state === IDLE && !die.autoRoll && click && die.bb.contains(cursor)) {
+            if (!die.autoRoll && click && die.bb.contains(cursor)) {
                 die.roll()
             }
 
@@ -480,7 +512,6 @@
         }
 
         function pop(text, pos, level) {
-            console.log(text)
             sprites.push(new Sprite(text, pos, cellSize * (.25 + level / 10), -130 + rnd(80), (300 + level * 100) * (95 + rnd(10)) / 100));
         }
 
@@ -491,7 +522,6 @@
 
         function update(delta) {
             scoreShift.tick(delta);
-
 
             for (let action of actions) {
                 if (!action.shown && score > action.price * 2 / 3) {
@@ -524,13 +554,12 @@
             ctext(soundOn ? '🕪' : '🕨', btn.pos.x, btn.pos.y, 0);
         }
 
-
         function renderDie(die) {
             ctx.save();
 
             if (die.state == IDLE && !die.autoRoll && die.bb.contains(cursor)) {
                 ctx.fillStyle = 'white';
-                roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 10);
+                roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 8);
                 ctx.fill();
             }
 
@@ -542,7 +571,8 @@
                 die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : null,
                 die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : null);
 
-            ctx.fillStyle = 'white'
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
             if (die.autoRoll && die.state == IDLE) ctext(die.anim, 0, -cellSize / 4, 0)
 
             ctx.restore();
@@ -578,12 +608,6 @@
             ctx.fillStyle = grad
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
-            ctx.font = '32pt Georgia';
-
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = 'black';
-            ctext(score, cellSize, cellSize, scoreShift.value * deg)
-
             ctx.save();
             ctx.translate(ox, oy);
 
@@ -602,6 +626,12 @@
             }
 
             ctx.restore();
+
+            ctx.font = '32pt Georgia';
+
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctext(score, cellSize, cellSize, scoreShift.value * deg)
         }
 
         function ctext(text, x, y, rot) {

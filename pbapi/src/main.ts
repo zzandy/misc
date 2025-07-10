@@ -15,46 +15,51 @@ async function main() {
         results.push(...matches)
     }));
 
-    await Promise.all(tasks)
+    try {
+        await Promise.all(tasks)
 
-    let matches = results
-        .filter(isPromisingName)
-        .filter(isRecentEnough)
-        .filter(isSeeded)
-        .filter(isLargeEnough);
+        let matches = results
+            .filter(isPromisingName)
+            .filter(isRecentEnough)
+            .filter(isSeeded)
+            .filter(isLargeEnough);
 
-    matches = await filterAsync(matches, isDescriptionClean);
+        matches = await filterAsync(matches, isDescriptionClean);
 
-    for (let term of terms) {
-        let num = matches.filter(m => m.name.includes(term)).length;
-        console.log(`${term}: ${rawResults[term]} matches, ${num} results`);
-    }
-
-    if (matches.length > 0)
-        data.push(...matches.map(m => [m.id, m.seeders, humanSize(m.size), m.name, humanDate(m.added)]));
-
-    let widths = data.reduce((w, row) => {
-        return w.map((x, i) => i == 0 ? x : Math.max(x, row[i].length))
-    }, [0, 5, 0, 0, 0])
-
-    if (data.length) {
-        console.log([
-            '    ',
-            bold('seeds'.padStart(widths[1])),
-            bold('size'.padStart(widths[2])),
-            bold('name'.padEnd(widths[3])),
-            bold('age')].join('  ')
-        );
-
-        for (let row of data) {
-            console.log([
-                link('https://thepiratebay.org/description.php?id=' + row[0], 'link'),
-                row[1].padStart(widths[1]),
-                row[2].padStart(widths[2]),
-                row[3].padEnd(widths[3]),
-                row[4]
-            ].join('  '));
+        for (let term of terms) {
+            let num = matches.filter(m => m.name.includes(term)).length;
+            console.log(`${term}: ${rawResults[term]} matches, ${num} results`);
         }
+
+        if (matches.length > 0)
+            data.push(...matches.map(m => [m.id, m.seeders, humanSize(m.size), m.name, humanDate(m.added)]));
+
+        let widths = data.reduce((w, row) => {
+            return w.map((x, i) => i == 0 ? x : Math.max(x, row[i].length))
+        }, [0, 5, 0, 0, 0])
+
+        if (data.length) {
+            console.log([
+                '    ',
+                bold('seeds'.padStart(widths[1])),
+                bold('size'.padStart(widths[2])),
+                bold('name'.padEnd(widths[3])),
+                bold('age')].join('  ')
+            );
+
+            for (let row of data) {
+                console.log([
+                    link('https://thepiratebay.org/description.php?id=' + row[0], 'link'),
+                    row[1].padStart(widths[1]),
+                    row[2].padStart(widths[2]),
+                    row[3].padEnd(widths[3]),
+                    row[4]
+                ].join('  '));
+            }
+        }
+    }
+    catch (ex) { 
+        console.error(ex)
     }
 }
 

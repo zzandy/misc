@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+<head>
+    <meta charset="utf-8" />
+    <title>4x</title>
+    <script src="lightue.min.js"></script>
+    <style>
+        .root {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr auto 1fr;
+        }
+
+        .menu,
+        .controls {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .planets {
+            display: grid;
+            grid-template-columns: repeat(7, auto);
+            overflow: scroll;
+        }
+
+        .inactive {
+            filter: grayscale(90%);
+        }
+    </style>
+</head>
+
+<body>
+    <script name="loop" type="text/javascript">
+        function loop(targetFps, fixedUpdate, render) {
+            let fixedDelta = 1000 / targetFps;
+            let acc = fixedDelta;
+            let then = performance.now();
+
+            function tick(now) {
+                let delta = now - then;
+                acc += delta;
+                then = now;
+                let reps = 0;
+
+                while (acc >= fixedDelta && ++reps < 20) {
+                    acc -= fixedDelta;
+                    fixedUpdate(fixedDelta);
+                }
+
+                if (reps == 20) acc = 0;
+
+                render(delta);
+
+                requestAnimationFrame(tick);
+            }
+
+            tick(then);
+        }
+    </script>
+
+    <script name="canvas" type="text/javascript">
+        function fullscreenCanvas() {
+            let [can, ctx] = makeCanvas(window.innerWidth, window.innerHeight, false)
+
+            document.body.appendChild(can);
+            document.body.style.overflow = "hidden";
+            document.body.style.margin = "0";
+            document.body.style.padding = "0";
+
+            return ctx;
+        }
+
+        function makeCanvas(width, height, alpha) {
+
+            let can = document.createElement('canvas');
+            let ctx = can.getContext('2d', { alpha });
+
+            ctx.canvas.width = width;
+            ctx.canvas.height = height;
+
+            return [can, ctx];
+        }
+    </script>
+
+    <script type="text/javascript">
+        (() => {
+            const { useState, button, div, span } = Lightue;
+            const { random, sin, cos, sqrt, min, max } = Math;
+            const tau = Math.PI * 2;
+
+            // 4X space game
+            // Start on one planet expand to many with time
+            // Each planet has population capacity and population
+            // player can build districs that when manned produce food, production or research
+            //  - food is required by population
+            //  - production goes into constructing anything
+            //  - reasearch goes into aquiring new technologies
+
+            const planetTraits = [
+                [20, 'rich', 'poor'],
+                [20, 'fertile', 'fertile', 'barren', 'fertile', 'barren', 'ocean', 'ice', 'desert'],
+                [10, 'hollow'],
+                [2, 'ancient ruins'],
+                [5, 'rings'],
+                [5, 'moon', 'moons'],
+                [5, 'week magnetic field', 'supermagnetized core']
+            ];
+
+            const alphabeth = 'abcdefghijklmnopqrstuvwxyz0123456789-'.toUpperCase().split('');
+            let recentNames = new Set();
+
+            let beginning = new Set(), middle = new Set(), end = new Set();
+<<<<<<< HEAD
+            'Ma la sta re, Men tar, Il os, Sul lust, Ata xis, Bra ko, Ka mi no, Mus ta far, Ho th, Bes pin, Kra it, Ta shy lum, Jak ku, Pak led, Da tho mir, Vor con, En dor, Rev lar, Mek lon, Dan too ine, U rec tum, Arra kis, Klen dat hu, Ko bol, Mag ra thea, Tran tor, Mel mac, Kor ri ban, Ry loth, Cor rus cant, Ta o, Al de ra an, Su liu kemai, Se lu sa, Hei di, Re gu lus, Aga mem non, Tla xis'.split(', ').map(name => name.split(' ')).forEach(([start, ...rest]) => {
+                beginning.add(start);
+=======
+            'Ma la sta re, Men tar, Il os, Pak led, Da tho mir, Min bar, Vor um, Ni da vel lir, En dor, Mek lar, Mec lon, Dan too ine, U rec tum, Ar ra kis, Klen dat hu, Ko bol, Mag ra thea, Tran tor, Mel mac, Kor ri ban, Ry loth, Cor rus cant, Ta o, Al de ra an, Su liu kemai, Se lu sa, Hei di, Re gu lus, Aga mem non, Tlei lax, Beo fong kor xis, Te neri fe, Le to hot pei nam val, Wei quan fuen, Zak crey wur, Ur by ksar quan, Z ha dum, Fen sa lir'
+                .split(', ')
+                .map(name => { recentNames.add(name.replace(/\s/g, '')); return name.split(' ') })
+                .forEach(([start, ...rest]) => {
+                    beginning.add(start);
+>>>>>>> b8654168e8ba8f45c4bfbddd6ed02a1d7f54c130
+
+                    for (let i = 0; i < rest.length - 1; ++i)middle.add(rest[i]);
+
+                    end.add(rest[rest.length - 1]);
+                });
+
+            beginning = [...beginning];
+            middle = [...middle];
+            end = [...end];
+
+            const heatStart = {};
+            const heatMid = {};
+            const heatEnd = {};
+
+            let numSystems = 100;
+            let angle = 0;
+
+            const ctx = fullscreenCanvas();
+            const { width, height } = ctx.canvas;
+
+            const color = {
+                O: '#92b5ff', B: '#a2c0ff', A: '#d5e0ff', F: '#f9f5ff', G: '#ffede3', K: '#ffdab5', M: '#ffb56c', W: '#00feff', S: '#f8b292', C: '#ffd0d0', D: '#8a97ec', H: 'grey'
+            }
+
+            const systems = [];
+            const lanes = [];
+            const dists = [];
+            const links = [];
+
+            for (let i = 0; i < numSystems; ++i) {
+                const sys = system();
+                let clear = false;
+                while (!clear) {
+                    clear = true;
+                    for (const { pos } of systems) {
+                        if (dist(pos, sys.pos) < .12) {
+                            const a = random() * tau;
+                            const d = (1 - (random() * random())) / 2;
+                            sys.pos = [d * cos(a), d * sin(a), random()];
+                            clear = false;
+                            break;
+                        }
+                    }
+                }
+
+                systems.push(sys);
+            }
+
+            for (let i = 0; i < numSystems; ++i) {
+                const row = [];
+                const r2 = [];
+                for (let j = 0; j < i; ++j) {
+                    r2.push(false);
+                    row.push(dist(systems[i].pos, systems[j].pos));
+                }
+                lanes.push(r2);
+                dists.push(row);
+                links[i] = 0;
+            }
+
+            let set = new Set([0]);
+
+            let lanesLength = 0;
+            let numLanes = 0;
+
+            // construct links
+            while (set.size < numSystems) {
+                let d = Infinity;
+                let shortest = [];
+                let add = null;
+                let root = null;
+                for (let i = 0; i < numSystems; ++i) {
+                    if (set.has(i)) continue;
+
+                    for (let j of set) {
+
+                        const dj = dists[max(i, j)][min(i, j)];
+                        if (dj < d) {
+                            d = dj;
+                            shortest = [max(i, j), min(i, j)];
+                            add = i;
+                            root = j;
+                        }
+                    }
+                }
+
+                lanesLength += d;
+                numLanes++;
+
+                lanes[shortest[0]][shortest[1]] = true;
+                set.add(add);
+
+                links[root]++;
+                links[add]++;
+            }
+
+            // add lanes
+            const avg = lanesLength / numLanes;
+            for (let i = 0; i < numSystems; ++i) {
+                while (links[i] < 4) {
+
+                    let d = Infinity;
+                    let target = null;
+
+                    for (let j = 0; j < i; ++j) {
+                        const dj = dists[i][j]
+                        if (dj < 2 * avg && links[j] < 4 && dj < d) {
+                            d = dj;
+                            target = j;
+                        }
+                    }
+
+                    for (let j = i + 1; j < numSystems; ++j) {
+                        const dj = dists[j][i]
+                        if (dj < 2 * avg && links[j] < 4 && dj < d) {
+                            d = dj;
+                            target = j;
+                        }
+                    }
+
+                    if (target == null) break;
+
+                    lanes[max(i, target)][min(i, target)] = true;
+                    links[i]++;
+                    links[target]++;
+                }
+            }
+
+            const state = useState({
+                frame: null,
+                balance: 0,
+                systems,
+                lanes
+            });
+
+            Lightue({
+                menu: ['planets', 'tech', 'designer', 'diplomacy'].map(x => menu(x, x)),
+                frame: () => state.frame,
+                planets: () => ['Name', 'Size', 'Pop', 'Food', 'DF', 'Prod', 'Science'].concat(state.systems.flatMap(system => system.planets.filter(p => p.pop >= 0).flatMap(p => [
+                    p.name,
+                    p.size,
+                    uirepeat(p.pop, '🧍'),
+                    uirepeat(p.food, '🍎'),
+                    p.foodSaldo,
+                    uirepeat(p.prod, '⚒️'),
+                    uirepeat(p.scie, '🧪'),
+                ]))),
+                controls: {
+                    bal: () => '🧈' + state.balance,
+                    next: {
+                        $$: 'Next turn',
+                        onclick: turn,
+                    }
+                }
+            });
+
+            document.querySelector('.root').style = 'left: ' + ctx.canvas.height + 'px';
+            const cursor = { x: Infinity, y: Infinity };
+            ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX, cursor.y = clientY });
+
+            loop(60, update, render);
+
+            function update(delta) {
+                angle -= delta * tau / 100000;
+            }
+
+            function render() {
+                ctx.clearRect(0, 0, width, height);
+
+                const depths = [];
+                const depthOrder = [];
+
+                let closest = null;
+                let closestDist = Infinity;
+
+                for (let i = 0; i < numSystems; ++i) {
+                    const d = depth(systems[i].pos);
+                    depths[i] = d;
+                    depthOrder.push([d, i]);
+
+
+                    const [x, y] = map(systems[i].pos)
+                    const dis = dist([x, y, 0], [cursor.x, cursor.y, 0]);
+
+                    if (dis < closestDist) {
+                        closestDist = dis;
+                        closest = i;
+                    }
+                }
+
+                depthOrder.sort(([d1], [d2]) => d1 - d2); // back to front
+                const passed = new Set();
+                for (let [d, i] of depthOrder) {
+                    passed.add(i);
+
+                    for (let j = 0; j < i; ++j) {
+                        if (passed.has(j)) continue;
+                        drawLane(i, d, j, depths[j])
+                    }
+
+                    for (let j = i + 1; j < numSystems; ++j) {
+                        if (passed.has(j)) continue;
+                        drawLane(j, depths[j], i, d);
+                    }
+
+                    if (i == closest && closestDist < 30) {
+                        continue;
+                    }
+
+                    drawStar(i)
+                }
+
+                function drawLane(i, d1, j, d2) {
+                    if (lanes[i][j]) {
+
+                        ctx.beginPath();
+                        const [x1, y1] = map(systems[i].pos)
+                        const [x2, y2] = map(systems[j].pos)
+
+                        ctx.moveTo(x1, y1);
+                        ctx.lineTo(x2, y2);
+
+                        ctx.strokeStyle = ctx.createLinearGradient(x1, y1, x2, y2);
+
+                        d1 = d1 + 20;
+                        d2 = d2 + 20;
+
+                        ctx.strokeStyle.addColorStop(0, `rgb(${d1},${d1},${d1})`)
+                        ctx.strokeStyle.addColorStop(1, `rgb(${d2},${d2},${d2})`)
+                        ctx.stroke();
+                    }
+                }
+
+                // draw systems
+                if (closestDist < 30) {
+                    drawStar(closest, true);
+                }
+
+                function drawStar(i, selected) {
+                    let { pos, type, name } = systems[i]
+                    ctx.fillStyle = color[type]
+                    const [x, y] = map(pos)
+                    const d = depth(pos);
+
+                    ctx.fillRect(x - 1, y - 1, 2, 2)
+
+<<<<<<< HEAD
+                    ctx.fillStyle = 'oklch(from ' + color[type] + ' calc(l*' + (d / 255 / 2 + .5) + '  ) c h)'
+                    ctx.fillText(name, x, y)
+=======
+                    if (selected) {
+                        ctx.strokeRect(x - 10, y - 10, 20, 20);
+                    }
+
+                    ctx.shadowColor = 'rgb(0,0,0)'
+                    ctx.shadowOffsetY = selected ? 1 : 2;
+
+                    ctx.fillStyle = 'oklch(from ' + color[type] + ' calc(l*' + (d / 255 / 2 + .5) + '  ) c h)'
+                    ctx.textBaseline = 'middle'
+                    ctx.fillText(name, x+5, y - (selected ? 1 : 0))
+
+>>>>>>> b8654168e8ba8f45c4bfbddd6ed02a1d7f54c130
+                }
+            }
+
+            function turn() {
+                for (const system of state.systems) {
+                    for (const planet of system.planets) {
+                        planet.pop += planet.foodSaldo;
+
+                        if (planet.pop < 1) continue;
+
+                        planet.food = 0;
+                        planet.prod = 0;
+                        planet.scie = 0;
+
+                        // staff production and research
+                        for (let building of planet.buildings) {
+                            planet.food += building.food;
+                            planet.prod += building.prod;
+                            planet.scie += building.scie;
+                        }
+
+                        planet.foodSaldo = planet.food - planet.pop;
+                    }
+                }
+            }
+
+            function map(pos) {
+                return [height / 2 + (pos[0] * cos(angle) - pos[1] * sin(angle)) * height, pos[2] * height];
+            }
+
+            function depth(pos) {
+                return ((pos[0] * sin(angle) + pos[1] * cos(angle)) + .5) * 255 | 0
+            }
+
+            function menu(title, frame) {
+                return {
+                    $$: title,
+                    onclick: () => state.frame = frame
+                }
+            };
+
+            function system() {
+                const type = rnd('O, B, A, F, G, K, M, W, S, C, D, H'.split(', '));
+                const name = getName();
+
+                const numPlanets = 3 + rnd(7);
+                const planets = [];
+
+                for (let i = 0; i < numPlanets; ++i) {
+                    if (rnd(100) < 10) continue;
+                    planets.push(planet(name + ' ' + roman(i + 1)))
+                }
+
+                const a = random() * tau;
+                const d = (1 - (random() * random())) / 2;
+
+                return {
+                    type,
+                    name,
+                    planets,
+                    color: rnd(['#ce5cff', '#26547d', '#ef436b', '#ffce5c', '#05c793']),
+                    pos: [d * cos(a), d * sin(a), random()]
+                }
+            }
+
+            function planet(name) {
+                const size = 1 + rnd(10);
+
+                return {
+                    name,
+                    size,
+                    buildings: [],
+                    pop: rnd(5),
+                    popCap: size,
+                    food: rnd(5),
+                    foodSaldo: 0,
+                    prod: rnd(5),
+                    scie: rnd(5),
+                    traits: planetTraits.filter(([prob]) => rnd(100) < prob).map(([_, ...traits]) => rnd(traits))
+                }
+            }
+
+            function getName() {
+                let name = '';
+                let numTries = 10;
+                do {
+                    name = rnd(100) < 40
+                        ? randomPart(beginning, heatStart) + (rnd(100) < 40 ? randomPart(middle, heatMid) + randomPart(middle, heatMid) : randomPart(middle, heatMid)) + randomPart(end, heatEnd)
+                        : randomPart(beginning, heatStart) + randomPart(end, heatEnd);
+                } while ((name.length > 11 || recentNames.has(name)) && numTries-- > 0)
+
+                if (numTries == 0) {
+                    const root = name;
+                    const suffixes = ['New _', '_ Alpha', '_ Beta', '_ Minor', '_ Major', '_ Secundus', '_ Prime', '#'];
+
+                    do {
+                        let suffix = rnd(suffixes);
+                        if (suffix == '#') suffix = '_-' + randomSuffix();
+                        name = suffix.replace('_', name);
+                    } while (recentNames.has(name));
+                }
+
+                return name;
+
+                function randomPart(source, heats) {
+                    let heat = 0;
+                    let part = null;
+                    let n = 0;
+                    do {
+                        ++n;
+                        part = rnd(source);
+                        if (!(part in heats)) heats[part] = 0;
+                    }
+                    while (heats[part] > heat++);
+
+                    heats[part] += heat;
+
+                    return part;
+                }
+
+                function randomSuffix() {
+                    let len = 2 + rnd(5);
+                    let res = '';
+
+                    for (let i = 0; i < len; ++i) {
+                        const l = rnd(alphabeth);
+                        if (l == '-' && (i == 0 || i == len - 1)) {
+                            --i;
+                            continue;
+                        }
+                        res += l;
+
+                    }
+
+                    return res;
+                }
+            }
+
+            function rnd(a) {
+                return a instanceof Array ? a[rnd(a.length)] : ((a * random()) | 0)
+            }
+
+            function roman(x) {
+                if (x > 4999) return x;
+
+                const letters = 'MDCLXVI'.split('');
+                let res = '';
+
+                let i = 0;
+                for (let m = 1000; m >= 1; m /= 10) {
+                    let n = (x / m) | 0;
+
+                    if (n > 0) {
+                        x -= n * m;
+
+                        if (n == 9) res += letters[i] + letters[i - 2];
+                        else {
+                            if (n >= 5) { res += letters[i - 1]; n -= 5 };
+
+                            if (n == 4) res += letters[i] + letters[i - 1];
+                            else if (n > 0) res += letters[i].repeat(n)
+                        }
+                    }
+
+                    i += 2;
+                }
+
+                return res;
+            }
+
+            function dist(p1, p2) {
+                const dx = p1[0] - p2[0];
+                const dy = p1[1] - p2[1];
+                const dz = p1[2] - p2[2];
+
+                return sqrt(dx * dx + dy * dy + dz * dz);
+            }
+
+            function uirepeat(n, content) {
+                if (n < 1) return div.inactive(content)
+                return div(content.repeat(n));
+            }
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" ×mlns="http://www.w3.org/1999/×html">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Cards</title>
+    <style>
+        html,
+        body {
+            background-color: #003c0e;
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <script>
+        let stats = { total: 18000000, hight: 12552914, shade: 3020045, flush: 846540, straight: 405244, "flush straight": 33811, "flush shade": 101679, set: 39767 }
+
+        const q = {
+        };
+
+        const color = { '♠': 'b', '♥': 'r', '♣': 'b', '♦': 'r' }
+
+
+        function init() {
+            stats = {
+                total: 0
+            }
+        }
+
+
+
+        function* deal() {
+            const deck = [];
+
+
+            for (let suit of '♠♥♣♦'.split(''))
+                for (let rank of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
+                    deck.push({ rank, suit });
+
+            shuffle(deck);
+
+            for (let i = 0; i < deck.length / 3; ++i)
+                yield deck.slice(i * 3, i * 3 + 3);
+        }
+
+        function which(roll) {
+            if (roll.length < 3) return;
+            roll.sort((a, b) => a.rank - b.rank);
+
+            //if (roll[0].rank == roll[1].rank && roll[0].rank == roll[2].rank) return 'set';
+
+            let straight = roll[0].rank + 1 == roll[1].rank && roll[0].rank + 2 == roll[2].rank;
+            let flush = roll[0].suit == roll[1].suit && roll[0].suit == roll[2].suit
+            let shade = color[roll[0].suit] == color[roll[1].suit] && color[roll[0].suit] == color[roll[2].suit]
+
+            return straight && flush ? 'flush straight'
+                : straight && shade ? 'flush shade'
+                    : straight ? 'straight'
+                        : flush ? 'flush'
+                            : shade ? 'shade'
+                                : 'hight'
+
+
+        }
+
+        function run(n) {
+            init();
+            let i = 0;
+            function tick() {
+                for (let x = 0; x < 1000, i < n; ++x, ++i) {
+                    for (let hand of deal()) {
+                        let r = which(hand)
+                        if (r !== undefined) {
+                            if (!(r in stats)) stats[r] = 0;
+                            stats[r]++;
+                        }
+
+                        stats['total']++
+                    }
+
+                    if (i < n)
+                        setTimeout(tick, 1);
+                }
+            }
+            tick()
+
+            report();
+        }
+
+        function report() {
+            const lines = Object.entries(stats);
+            lines.sort(([_, a], [__, b]) => a - b);
+
+            console.table(lines.map(([name, count]) => [(100 * count / stats.total) + '%', name, 2 * (q[name] || 1) / 3 * 100 * stats.score / count]))
+        }
+
+        function shuffle(a) {
+            let i = a.length;
+
+            while (0 !== i) {
+                let idx = rnd(i--);
+
+                [a[i], a[idx]] = [a[idx], a[i]];
+            }
+
+            return a;
+        }
+
+        function rnd(n) {
+            return (Math.random() * n) | 0
+        }
+    </script>
+
+</body>
+
+</html>
