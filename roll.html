@@ -202,6 +202,8 @@
             set value(v) { this._value = v }
 
             roll() {
+                let anim = rollAnimTimes;
+
                 if (click && this.bb.contains(cursor)) {
                     if (action == ENABLE_CLEAN) {
                         this.edgeBonus = false;
@@ -227,6 +229,7 @@
                         this.autoRoll = true;
                         score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
+                        anim = 0;
                     }
                 }
 
@@ -235,7 +238,7 @@
                 sound();
 
                 this.state = ROLLING;
-                this.anim = rollAnimTimes;
+                this.anim = anim;
                 this.acc = 0;
 
                 if (this.rollOthers || this.autoRoll) setTimeout(() => this.cell.neighbors.forEach(n => n?.die?.roll()), 400)
@@ -386,6 +389,13 @@
         let buyDiePrice = 10;
         let buyDieInflation = 1.05;
         let score = buyDiePrice;
+        let scoreSample = 0;
+        let scoreSamples = [];
+        let maxScoreSamples = 100;
+        let scoreSampleAcc = 0;
+        let scoreSampleId = 0;
+        let scoreSampleInterval = 1000;
+        let scoreGain = 0;
 
         let scoreShift = new Value(0);
         let sprites = [];
@@ -508,6 +518,7 @@
                 }
             }
 
+            scoreSample += gain;
             score += gain;
         }
 
@@ -536,6 +547,15 @@
             for (let btn of ui) {
                 if (click && btn.bb.contains(cursor.x, cursor.y))
                     btn.click(btn);
+            }
+
+            if ((scoreSampleAcc += delta) > scoreSampleInterval) {
+                scoreSamples[scoreSampleId] = scoreSample;
+                if (++scoreSampleId > maxScoreSamples) scoreSampleId = 0;
+
+                scoreGain = (scoreSamples.reduce((sum, s) => sum + s / maxScoreSamples) * 1000 / scoreSampleInterval) | 0;
+                scoreSample = 0;
+                scoreSampleAcc -= scoreSampleInterval;
             }
 
             click = false;
@@ -631,6 +651,9 @@
 
             ctx.fillStyle = 'white';
             ctx.strokeStyle = 'black';
+
+            if (scoreGain > 1.5)
+                ctext('+' + scoreGain, cellSize, 1.5 * cellSize, scoreShift.value * deg)
             ctext(score, cellSize, cellSize, scoreShift.value * deg)
         }
 
