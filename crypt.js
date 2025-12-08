@@ -166,6 +166,7 @@ const algorithms = [
 
                 const letter = codeToChar((ptCode + keyCode + acc) % 26);
                 acc += charToCode(letter);
+                acc %= 26;
 
                 return letter;
             }).join('');
@@ -180,6 +181,7 @@ const algorithms = [
                 const letter = codeToChar((260 + ctCode - keyCode - acc) % 26);
 
                 acc += ctCode;
+                acc %= 26;
 
                 return letter;
             }).join('');
@@ -273,23 +275,36 @@ function main() {
     shuffle(deck);
 
     const messages = [
-        'X ATTACK AT DAWN',
-        'Y ATTACK AT DAWN',
-        'Z ATTACK AT NOON',
+        ['X ATTACK AT DAWN',
+            'Y ATTACK AT DAWN',
+            'Z ATTACK AT NOON'
+        ],
+        [
+            'Monday weather report: Sunny with a chance of rainbows.',
+            'Tuesday weather report: Cloudy with a chance of meatballs.'
+        ],
+        ['AAAAAAAAAAAA',
+            'BBBBBBBBBBBB',
+            'CCCCCCCCCCCC'
+        ]
     ];
 
     for (const { name, encrypt, decrypt } of algorithms) {
         console.group(`Algorithm: ${name}`);
 
-        let first = null;
-        for (const msg of messages) {
-            const ct = encrypt(deck, msg);
-            const pt = decrypt(deck, ct);
 
-            console.log(`${msg} -> ${first ? highlightDiffs(first, ct) : ct}${pt === msg ? '' : ' (' + highlightDiffs(msg, pt) + ')'}`);
+        for (const block of messages) {
+            let first = null;
+            for (let msg of block) {
+                msg = msg.toUpperCase();
+                const ct = encrypt(deck, msg);
+                const pt = decrypt(deck, ct);
 
-            if (first === null) {
-                first = ct;
+                console.log(`${msg} -> ${first ? highlightDiffs(first, ct) : ct}${pt === msg ? '' : ' (' + highlightDiffs(msg, pt) + ')'}`);
+
+                if (first === null) {
+                    first = ct;
+                }
             }
         }
         console.groupEnd();
