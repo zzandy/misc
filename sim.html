@@ -319,6 +319,7 @@
                     'Decrease prod cooldown to': 'Snížení doby stání produkce na',
                     'Marketing campain, increase price to': 'Marketingová kampaň, zvýšení ceny na',
                     'New production record!!': 'Nový výrobní rekord!!',
+                    'production goes towards cleanup': 'výroby jde na úklid',
                 }
             }
 
@@ -616,16 +617,18 @@
                 ]),
 
                 prc: upgradeObj(price, () => state.maxBalance > 12000),
-                int: div.line({ $if: () => state.totalEarned > 10000 }, [() => `${tr('Interest')} ${nice(interest.getValue())}% `, upgradeObj(interest)]),
+                int: div.line({ $if: () => state.totalEarned > 10000, $$: [() => `${tr('Interest')} ${nice(interest.getValue())}% `, upgradeObj(interest)] }),
 
-                autosell: div.line({ $if: () => state.totalProduced > 5000 }, [
-                    () => `${tr('Autosell')} ${autosell.getValue()} `,
-                    upgradeObj(autosell),
-                    () => autosellRate.getValue() >= 1 ? `${tr('every')} ${autosellRate.getValue()} ${tr('seconds')}`
-                        : `${(1 / autosellRate.getValue()) | 0} ${tr('times per second')}`,
+                autosell: div.line({
+                    $if: () => state.totalProduced > 5000, $$: [
+                        () => `${tr('Autosell')} ${autosell.getValue()} `,
+                        upgradeObj(autosell),
+                        () => autosellRate.getValue() >= 1 ? `${tr('every')} ${autosellRate.getValue()} ${tr('seconds')}`
+                            : `${(1 / autosellRate.getValue()) | 0} ${tr('times per second')}`,
 
-                    upgradeObj(autosellRate),
-                ]),
+                        upgradeObj(autosellRate),
+                    ]
+                }),
 
                 notes: state.notes
             });
