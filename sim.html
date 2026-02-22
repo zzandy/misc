@@ -602,7 +602,7 @@
                 ]),
 
                 man: div.group([
-                    upgrade(tr('Increase manual rate'), () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate, () => state.totalProduced > 200),
+                    upgrade(() => tr('Increase manual rate'), () => round(state.manualRate * 100 * 1.1), () => ++state.manualRate, () => state.totalProduced > 200),
                     upgradeObj(storage, () => state.totalProduced > 2000)
                 ]),
 
@@ -708,7 +708,7 @@
             }
 
             function feat(title, price, offerIf) {
-                return btn(tr(title) + ' (' + price + ')',
+                return btn(() => tr(title) + ' (' + price + ')',
                     () => {
                         state.features.push(tr(title));
                     },
