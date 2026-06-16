@@ -11,7 +11,7 @@
         }
 
         body {
-            width: 50rem;
+            width: 70rem;
             margin: 2rem auto;
         }
 
@@ -30,6 +30,42 @@
             grid-template-columns: 1fr 1fr 1fr;
         }
 
+        .grid {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            grid-column: span 3;
+        }
+
+        .voting-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            width: 100%;
+            overflow: hidden;
+            transition: max-height 300ms ease-in-out, opacity 300ms ease-in-out, margin 300ms ease-in-out;
+        }
+
+        .row-collapse {
+            opacity: 0 !important;
+            max-height: 0 !important;
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+            pointer-events: none;
+        }
+
+        .cell {
+            display: grid;
+            grid-template-columns: 3fr 1fr 3fr;
+            gap: 0.3rem;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 0.4rem;
+            transition: opacity 200ms ease-in-out;
+            min-height: 5rem;
+            box-sizing: border-box;
+        }
+
         .row {
             grid-column: span 3;
         }
@@ -38,9 +74,22 @@
             grid-column: span 2;
         }
 
+        .tall {
+            height: 5rem;
+        }
+
         .small {
             font-size: 50%;
             margin: 0 .6em;
+        }
+
+        .title {
+            font-size: 150%;
+            font-weight: bold;
+        }
+
+        .cap {
+            text-transform: capitalize;
         }
 
         li::marker {
@@ -61,10 +110,8 @@
     </div>
 
     <div id="contest" style="display: none;" class="pane three">
-        <div id="question" class="row"></div>
-        <button id="left"></button>
-        <button id="neither">Neither</button>
-        <button id="right"></button>
+        <div id="question" class="row title"></div>
+        <div id="grid" class="grid"></div>
         <span id="progress"></span>
         <button onclick="done()">Done</button>
     </div>
@@ -174,16 +221,13 @@
         const contest = get('contest');
         const results = get('results');
 
-        const left = get('left');
-        const right = get('right');
-        const neither = get('neither');
-
         const listing = get('listing');
         const info = get('info');
         const progress = get('progress');
         const start = get('start');
+        const grid = get('grid');
 
-        const state = { pairs: [], question: '', index: -1, options: [] };
+        const state = { pairs: [], question: '', nextIndex: -1, resolvedCount: 0, options: [] };
 
         // events change state
         // states set ui
@@ -196,7 +240,8 @@
                     state.options = getLines().map(text => ({ text, rating: defaultRating }));
                     state.question = get('input-question').value;
                     state.pairs = buildPairs(state.options)
-                    state.index = 0;
+                    state.nextIndex = 0;
+                    state.resolvedCount = 0;
                     return 'isVoting';
                 }
             },
@@ -204,7 +249,7 @@
             isVoting: {
                 $enter: (state) => {
                     get('question').textContent = state.question;
-                    runPairs(state.index, state.pairs);
+                    startVoting(state);
 
                     if (stateMachine.currentState == 'isVoting')
                         show(contest);
@@ -212,7 +257,9 @@
                 $leave: () => { hide(contest) },
 
                 onVote: (state) => {
-                    state.index++;
+                    if (state.resolvedCount >= state.pairs.length) {
+                        return 'isViewing';
+                    }
                     return 'isVoting';
                 },
 
@@ -287,59 +334,86 @@
             stateMachine.act('onRestart');
         }
 
-        function runPairs(index, pairs) {
-            if (index >= pairs.length) {
-                stateMachine.act('onDone', true);
+        function startVoting(state) {
+            grid.replaceChildren();
+            for (let i = 0; i < state.pairs.length; i += 3) {
+                const row = document.createElement('div');
+                row.className = 'voting-row';
+                grid.appendChild(row);
+                
+                for (let j = 0; j < 3 && (i + j) < state.pairs.length; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.style.opacity = '0';
+                    row.appendChild(cell);
+                    fillCell(cell, state);
+                }
+            }
+            updateProgress(state);
+        }
+
+        function fillCell(cell, state) {
+            if (state.nextIndex >= state.pairs.length) {
+                cell.style.opacity = '0';
+                cell.innerHTML = '';
                 return;
             }
 
-            progress.innerText = `${index + 1} out of ${pairs.length}`;
-            const p = pairs[index];
+            const pairIndex = state.nextIndex++;
+            const p = state.pairs[pairIndex];
 
-            left.innerText = p[0].text;
-            right.innerText = p[1].text;
+            cell.innerHTML = '';
+            const b1 = document.createElement('button');
+            b1.className = 'tall cap';
+            b1.innerText = p[0].text;
+            b1.onclick = () => handleVote(cell, p, 1, 0, state);
 
-            const clickLeft = () => {
-                const res = updateElo(p[0].rating, p[1].rating, 1, 0);
-                p[0].rating = res[0];
-                p[1].rating = res[1];
+            const bn = document.createElement('button');
+            bn.className = 'tall cap';
+            bn.innerText = 'Neither';
+            bn.onclick = () => handleVote(cell, p, 0, 0, state);
 
-                unbind();
-                stateMachine.act('onVote');
-            };
+            const b2 = document.createElement('button');
+            b2.className = 'tall cap';
+            b2.innerText = p[1].text;
+            b2.onclick = () => handleVote(cell, p, 0, 1, state);
 
-            const clickRight = () => {
-                const res = updateElo(p[0].rating, p[1].rating, 0, 1);
-                p[0].rating = res[0];
-                p[1].rating = res[1];
+            cell.appendChild(b1);
+            cell.appendChild(bn);
+            cell.appendChild(b2);
 
-                unbind();
-                stateMachine.act('onVote');
-            };
+            setTimeout(() => cell.style.opacity = '1', 50);
+        }
 
-            const clickNone = () => {
-                const res = updateElo(p[0].rating, p[1].rating, 0, 0);
-                p[0].rating = res[0];
-                p[1].rating = res[1];
+        function handleVote(cell, p, s1, s2, state) {
+            const res = updateElo(p[0].rating, p[1].rating, s1, s2);
+            p[0].rating = res[0];
+            p[1].rating = res[1];
 
-                unbind();
-                stateMachine.act('onVote');
-            };
+            state.resolvedCount++;
+            updateProgress(state);
 
-            const unbind = () => {
-                left.removeEventListener('click', clickLeft)
-                right.removeEventListener('click', clickRight)
-                neither.removeEventListener('click', clickNone)
-            }
+            cell.style.opacity = '0';
+            cell.style.pointerEvents = 'none';
 
-            done = () => {
-                unbind();
-                stateMachine.act('onDone');
-            }
+            setTimeout(() => {
+                const row = cell.parentElement;
+                const allHidden = Array.from(row.children).every(c => c.style.opacity === '0');
+                if (allHidden) {
+                    row.style.maxHeight = row.offsetHeight + 'px';
+                    row.offsetHeight; // force reflow
+                    row.classList.add('row-collapse');
+                    setTimeout(() => row.remove(), 300);
+                }
+                
+                if (state.resolvedCount >= state.pairs.length) {
+                    stateMachine.act('onDone');
+                }
+            }, 200);
+        }
 
-            left.addEventListener('click', clickLeft)
-            right.addEventListener('click', clickRight)
-            neither.addEventListener('click', clickNone)
+        function updateProgress(state) {
+            progress.innerText = `${state.resolvedCount} out of ${state.pairs.length}`;
         }
 
         function done() {
