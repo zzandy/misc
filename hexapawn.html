@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>hexapawn</title>
+</head>
+
+<body>
+    <script type="text/javascript">
+        // Hexapawn:
+        // 3x3 grid 
+        // 3 pawns per player
+        // pawn moves forward only
+        // pawn attacks diagonally
+        // win by placing your pawn at the oppisite row
+        // or by killing all pawns
+        // or by making opponent unable to move
+
+        let initialState = [1, 1, 1, 0, 0, 0, -1, -1, -1, [[0, 4], [1, 4], [2, 5]]];
+        let seen = new Set();
+        let queue = [initialState];
+
+        run();
+
+        function run() {
+
+            let state = queue.shift();
+
+            if (state) {
+                play(state);
+
+                setTimeout(run, 10);
+            }
+        }
+
+        function play(state) {
+            let moves = getMoves(state);
+            let s = 30;
+
+            let ctx = makeCanvas(s * 4, s * 4);
+            ctx.translate(s / 2, s / 2)
+            renderState(ctx, s, state, moves);
+            for (let move of moves) {
+                let newState = deriveState(state, move);
+                newState = flipState(newState);
+                let hash = getStateHash(newState);
+
+                if (seen.has(hash) || seen.has(getStateHash(getMirrorState(newState)))) continue;
+
+                seen.add(hash);
+                queue.push(newState);
+            }
+        }
+
+        function getStateHash(state) {
+            let hash = 1;
+            for (let i = 0; i < 9; ++i)hash *= (i + 1) * 17 + (state[i] == 1 ? 23 : state[i] == -1 ? 17 : 7)
+            return hash;
+        }
+
+        function flipState(state) {
+            return [...state].reverse().map(x => -x);
+        }
+
+        function getMirrorState(state) {
+            return [
+                state[2], state[1], state[0],
+                state[5], state[4], state[3],
+                state[8], state[7], state[6],
+            ]
+        }
+
+        function deriveState(state, move) {
+            let newSate = state.slice(0, 9)
+
+            newSate[move[0]] = 0;
+            newSate[move[1]] = 1;
+
+            return newSate;
+        }
+
+        function makeCanvas(w, h) {
+            let canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            document.body.appendChild(canvas);
+            return canvas.getContext('2d');
+        }
+
+        function renderState(ctx, s, state, moves) {
+
+            const colors = ['#aa0000', '#bbbbbb', '#009900'];
+            for (let i = 0; i < 9; ++i) {
+                let cell = state[i];
+
+                let [x, y] = getCoords(i, s);
+
+                fillCircle(ctx, x, y, cell == 0 ? s / 10 : s * .48, colors[cell + 1])
+            }
+
+            if (moves) {
+
+                let idx = 0;
+                let colors = ['violet', 'olive', 'salmon', 'lightskyblue', 'goldenrod', 'cyan'];
+                for (let [from, to] of moves) {
+                    let [x0, y0] = getCoords(from, s);
+                    let [x1, y1] = getCoords(to, s);
+
+                    ctx.strokeStyle = colors[idx++];
+
+                    const n = 100;
+                    let dx = x1 - x0;
+                    let dy = y1 - y0
+                    for (let i = 0; i < n; ++i) {
+                        let q = i / n;
+                        let q2 = (i + 1) / n;
+                        ctx.beginPath();
+                        ctx.moveTo(x0 + dx * q, y0 + dy * q);
+                        ctx.lineTo(x0 + dx * q2, y0 + dy * q2)
+
+                        ctx.lineWidth = s * (1 - q) * .2;
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        function getCoords(i, s) {
+            let x = (i % 3 + .5) * s;
+            let y = (((i / 3) | 0) + .5) * s;
+
+            return [x, y];
+        }
+
+        function fillCircle(ctx, x, y, r, c) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, 2 * Math.PI);
+            ctx.closePath();
+            ctx.fillStyle = c;
+            ctx.fill();
+        }
+
+        function getMoves(s) {
+
+            let moves = [];
+            for (let i = 0; i < 6; ++i) {
+                if (i < 3 && s[i] == -1) return [];
+                if (s[i] == 1) {
+                    let x = i % 3;
+                    if (x > 0 && s[i + 2] == -s[i]) moves.push([i, i + 2])
+                    if (x < 2 && s[i + 4] == -s[i]) moves.push([i, i + 4]);
+                    if (s[i + 3] == 0) moves.push([i, i + 3])
+                }
+            }
+
+            return moves;
+        }
+    </script>
+</body>
