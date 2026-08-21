@@ -197,7 +197,7 @@ function resetWorld(w: World): void {
     w.gemBarCount = 0;
     w.gemMultiplierLevel = 0;
     w.gemHistory = [];
-    w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null, hasGem: Math.random() < w.gemChance }));
+    w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null, hasGem: Math.random() < w.gemChance, powerup: null }));
 }
 
 const loop = new Loop(1000 / 60, init, update, (delta, world) => renderer.render(delta, world));
@@ -209,7 +209,7 @@ function init(): World {
     const world: World = {
         size,
         numColors,
-        cells: new HexStore<Cell>(size, () => ({ color: 0, change: null, hasGem: false })),
+        cells: new HexStore<Cell>(size, () => ({ color: 0, change: null, hasGem: false, powerup: null })),
         dragStart: null,
         dragDir: null,
         activatedColor: null,
@@ -251,13 +251,15 @@ function init(): World {
         gemsCollected: 0,
         gemBarCount: 0,
         gemMultiplierLevel: 0,
-        gemHistory: []
+        gemHistory: [],
+        clockPowerupTime: 5000
     };
 
     world.cells = new HexStore<Cell>(size, () => ({
         color: randomStoneColor(world),
         change: null,
-        hasGem: Math.random() < world.gemChance
+        hasGem: Math.random() < world.gemChance,
+        powerup: null
     }));
 
     window.addEventListener('keydown', e => {
@@ -265,7 +267,8 @@ function init(): World {
             world.cells = new HexStore<Cell>(size, () => ({
                 color: randomStoneColor(world),
                 change: null,
-                hasGem: Math.random() < world.gemChance
+                hasGem: Math.random() < world.gemChance,
+                powerup: null
             }));
         }
     });
@@ -274,9 +277,16 @@ function init(): World {
     return world;
 }
 
+function grantPowerup(state: World, type: 'bomb' | 'clock' | 'asterisk', exclude: Set<Cell>): void {
+    const candidates: Cell[] = [];
+    state.cells.each((_i, _j, c) => { if (c.change === null && !exclude.has(c)) candidates.push(c); });
+    if (candidates.length === 0) return;
+    candidates[rnd(candidates.length)].powerup = type;
+}
+
 function update(delta: number, state: World) {
-    // Collect all match groups and mark as Burst
-    const groups = state.gameOver ? [] : mergeRuns(collectRuns(state.cells));
+    const runs = state.gameOver ? [] : collectRuns(state.cells);
+    const groups = mergeRuns(runs);
     if (groups.length > 0 && !state.timerActive) state.timerActive = true;
     for (const group of groups) {
         const count = group.size;
@@ -305,6 +315,46 @@ function update(delta: number, state: World) {
                     }
                 }
             }
+        }
+        const contributing = runs.filter(run => run.some(c => group.has(c)));
+        const maxRunLength = contributing.reduce((m, r) => Math.max(m, r.length), 0);
+        if (maxRunLength >= 5) grantPowerup(state, 'clock', group);
+        else if (contributing.length >= 2) grantPowerup(state, 'asterisk', group);
+        else if (count >= 4) grantPowerup(state, 'bomb', group);
+    }
+
+    const powerupQueue: Array<[number, number, 'bomb' | 'clock' | 'asterisk', number]> = [];
+    state.cells.each((i, j, cell) => {
+        if (cell.change instanceof Burst && cell.powerup !== null) {
+            powerupQueue.push([i, j, cell.powerup, cell.color]);
+            cell.powerup = null;
+        }
+    });
+    while (powerupQueue.length > 0) {
+        const [pi, pj, ptype, pcolor] = powerupQueue.shift()!;
+        if (ptype === 'bomb') {
+            for (const [di, dj] of dirs) {
+                const nb = state.cells.get(pi + di, pj + dj);
+                if (nb !== undefined && nb.change === null) {
+                    nb.change = new Burst();
+                    if (nb.powerup !== null) {
+                        powerupQueue.push([pi + di, pj + dj, nb.powerup, nb.color]);
+                        nb.powerup = null;
+                    }
+                }
+            }
+        } else if (ptype === 'clock') {
+            state.timerValue = Math.min(state.timerValue + state.clockPowerupTime, state.timerMax);
+        } else if (ptype === 'asterisk') {
+            state.cells.each((ai, aj, c) => {
+                if (c.change === null && c.color === pcolor) {
+                    c.change = new Burst();
+                    if (c.powerup !== null) {
+                        powerupQueue.push([ai, aj, c.powerup, c.color]);
+                        c.powerup = null;
+                    }
+                }
+            });
         }
     }
 
@@ -348,23 +398,26 @@ function update(delta: number, state: World) {
                         prev.change = new Fall(drop);
                         prev.color = randomStoneColor(state);
                         prev.hasGem = Math.random() < state.gemChance;
+                        prev.powerup = null;
                         --tgt;
                     }
                     else if (next.change == null) {
                         prev.change = new Fall(drop);
                         prev.color = next.color;
                         prev.hasGem = next.hasGem;
+                        prev.powerup = next.powerup;
                         prev = next;
                         --tgt;
                     }
                     else if (next.change instanceof Fall) {
                         prev.color = next.color;
                         prev.hasGem = next.hasGem;
-                        prev.change = next.change.plus(1);
-                        drop = (prev.change as Fall).dropHeight;
-
+                        prev.powerup = next.powerup;
+                        const newFall = new Fall(next.change.dropHeight + 1);
+                        newFall.phase = next.change.phase;
+                        prev.change = newFall;
+                        drop = newFall.dropHeight;
                         prev = next;
-
                         --tgt;
                     }
                     else if (next.change instanceof Burst) {

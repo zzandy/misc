@@ -6,7 +6,8 @@ const sqrt = Math.sqrt;
 export type Cell = {
     color: number,
     change: IChange | null,
-    hasGem: boolean
+    hasGem: boolean,
+    powerup: 'bomb' | 'clock' | 'asterisk' | null
 };
 
 export type World = {
@@ -54,7 +55,8 @@ export type World = {
     gemsCollected: number,
     gemBarCount: number,
     gemMultiplierLevel: number,
-    gemHistory: number[]
+    gemHistory: number[],
+    clockPowerupTime: number
 };
 
 export interface IChange {
@@ -68,9 +70,4 @@ export class Burst implements IChange {
 export class Fall implements IChange {
     public phase: number = 0;
     constructor(public dropHeight: number) { }
-
-    public plus(n: number): Fall {
-        this.dropHeight += n;
-        return this;
-    }
 }

@@ -189,8 +189,14 @@ export class ScreenManager {
             if (src != null && src.change == null && tgt != null && tgt.change == null
                 && this.hasMatchAfterSwap(si, sj, ti, tj)) {
                 const origColor = src.color;
+                const origPowerup = src.powerup;
+                const origHasGem = src.hasGem;
                 src.color = tgt.color;
+                src.powerup = tgt.powerup;
+                src.hasGem = tgt.hasGem;
                 tgt.color = origColor;
+                tgt.powerup = origPowerup;
+                tgt.hasGem = origHasGem;
                 this.world.activatedColor = origColor;
             }
         }
@@ -287,9 +293,52 @@ export class ScreenManager {
                     ctx.fillStyle = gemColors[cell.color];
                     ctx.fillCircle(0, 0, r * 0.25);
                 }
-                ctx.fillStyle = 'black';
-                const text = i + ' ' + j;
-                ctx.fillText(text, 0 - ctx.measureText(text).width / 2, 4);
+                if (cell.powerup !== null) {
+                    const ix = r * 0.52;
+                    const iy = r * 0.52;
+                    const ir = r * 0.25;
+                    ctx.save();
+                    ctx.translate(ix, iy);
+                    if (cell.powerup === 'bomb') {
+                        ctx.fillStyle = '#111111';
+                        ctx.fillCircle(0, 0, ir);
+                        ctx.strokeStyle = '#111111';
+                        ctx.lineWidth = ir * 0.35;
+                        ctx.beginPath();
+                        ctx.moveTo(-ir * 0.65, -ir * 0.65);
+                        ctx.lineTo(-ir * 1.4, -ir * 1.4);
+                        ctx.stroke();
+                        ctx.fillStyle = '#ffdd00';
+                        ctx.fillCircle(-ir * 1.55, -ir * 1.55, ir * 0.22);
+                    } else if (cell.powerup === 'clock') {
+                        ctx.fillStyle = '#ffffff';
+                        ctx.fillCircle(0, 0, ir);
+                        ctx.strokeStyle = '#111111';
+                        ctx.lineWidth = ir * 0.25;
+                        ctx.strokeCircle(0, 0, ir);
+                        const hourAng = -Math.PI / 2 + (10 / 12) * tau;
+                        const minAng = -Math.PI / 2 + (10 / 60) * tau;
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(Math.cos(hourAng) * ir * 0.5, Math.sin(hourAng) * ir * 0.5);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(Math.cos(minAng) * ir * 0.75, Math.sin(minAng) * ir * 0.75);
+                        ctx.stroke();
+                    } else if (cell.powerup === 'asterisk') {
+                        ctx.strokeStyle = '#111111';
+                        ctx.lineWidth = ir * 0.35;
+                        for (let k = 0; k < 6; k++) {
+                            const ang = k * tau / 6;
+                            ctx.beginPath();
+                            ctx.moveTo(0, 0);
+                            ctx.lineTo(Math.cos(ang) * ir, Math.sin(ang) * ir);
+                            ctx.stroke();
+                        }
+                    }
+                    ctx.restore();
+                }
             }
 
             ctx.restore();
