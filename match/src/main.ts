@@ -193,7 +193,11 @@ function resetWorld(w: World): void {
     w.timerActive = false;
     w.timerValue = w.timerMax;
     w.gameOver = false;
-    w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null }));
+    w.gemsCollected = 0;
+    w.gemBarCount = 0;
+    w.gemMultiplierLevel = 0;
+    w.gemHistory = [];
+    w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null, hasGem: Math.random() < w.gemChance }));
 }
 
 const loop = new Loop(1000 / 60, init, update, (delta, world) => renderer.render(delta, world));
@@ -205,7 +209,7 @@ function init(): World {
     const world: World = {
         size,
         numColors,
-        cells: new HexStore<Cell>(size, () => ({ color: 0, change: null })),
+        cells: new HexStore<Cell>(size, () => ({ color: 0, change: null, hasGem: false })),
         dragStart: null,
         dragDir: null,
         activatedColor: null,
@@ -240,19 +244,28 @@ function init(): World {
         timerActive: false,
         timerValue: 60000,
         timerMax: 60000,
-        gameOver: false
+        gameOver: false,
+        gemChance: 0.3,
+        gemsPerMultiplierLevel: 10,
+        gemMultiplierBonus: 1.2,
+        gemsCollected: 0,
+        gemBarCount: 0,
+        gemMultiplierLevel: 0,
+        gemHistory: []
     };
 
     world.cells = new HexStore<Cell>(size, () => ({
         color: randomStoneColor(world),
-        change: null
+        change: null,
+        hasGem: Math.random() < world.gemChance
     }));
 
     window.addEventListener('keydown', e => {
         if (e.code == "KeyR") {
             world.cells = new HexStore<Cell>(size, () => ({
                 color: randomStoneColor(world),
-                change: null
+                change: null,
+                hasGem: Math.random() < world.gemChance
             }));
         }
     });
@@ -278,7 +291,20 @@ function update(delta: number, state: World) {
         }
         state.multiplierDrainDelay = state.multiplierDrainDelayMs;
         for (const cell of group) {
-            if (cell.change == null) cell.change = new Burst();
+            if (cell.change == null) {
+                cell.change = new Burst();
+                if (cell.hasGem) {
+                    cell.hasGem = false;
+                    state.gemHistory.push(cell.color);
+                    state.gemsCollected++;
+                    state.gemBarCount++;
+                    if (state.gemBarCount >= state.gemsPerMultiplierLevel) {
+                        state.gemMultiplierLevel++;
+                        state.gemBarCount -= state.gemsPerMultiplierLevel;
+                        state.baseScoreMultiplier = 1 + state.gemMultiplierLevel * state.gemMultiplierBonus;
+                    }
+                }
+            }
         }
     }
 
@@ -321,16 +347,19 @@ function update(delta: number, state: World) {
                     if (next === undefined) {
                         prev.change = new Fall(drop);
                         prev.color = randomStoneColor(state);
+                        prev.hasGem = Math.random() < state.gemChance;
                         --tgt;
                     }
                     else if (next.change == null) {
                         prev.change = new Fall(drop);
                         prev.color = next.color;
+                        prev.hasGem = next.hasGem;
                         prev = next;
                         --tgt;
                     }
                     else if (next.change instanceof Fall) {
                         prev.color = next.color;
+                        prev.hasGem = next.hasGem;
                         prev.change = next.change.plus(1);
                         drop = (prev.change as Fall).dropHeight;
 

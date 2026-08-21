@@ -5,7 +5,8 @@ const sqrt = Math.sqrt;
 
 export type Cell = {
     color: number,
-    change: IChange | null
+    change: IChange | null,
+    hasGem: boolean
 };
 
 export type World = {
@@ -46,7 +47,14 @@ export type World = {
     timerActive: boolean,
     timerValue: number,
     timerMax: number,
-    gameOver: boolean
+    gameOver: boolean,
+    gemChance: number,
+    gemsPerMultiplierLevel: number,
+    gemMultiplierBonus: number,
+    gemsCollected: number,
+    gemBarCount: number,
+    gemMultiplierLevel: number,
+    gemHistory: number[]
 };
 
 export interface IChange {

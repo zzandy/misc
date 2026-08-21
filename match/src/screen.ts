@@ -4,6 +4,7 @@ import { Vector, AABB } from './geometry';
 import { tau } from './util';
 
 const colors = ['#fed203', '#d6050d', '#1337b2', '#079ecd', '#f76f03', '#8e0c70', '#cbcbcb'];
+const gemColors = ['#8e0c70', '#079ecd', '#fed203', '#d6050d', '#1337b2', '#fed203', '#000000'];
 
 const sq32 = Math.sqrt(3) / 2;
 
@@ -282,6 +283,10 @@ export class ScreenManager {
                 if (this.active != null && this.active[0] == i && this.active[1] == j)
                     ctx.strokeCircle(0, 0, r);
                 ctx.fillCircle(0, 0, r);
+                if (cell.hasGem) {
+                    ctx.fillStyle = gemColors[cell.color];
+                    ctx.fillCircle(0, 0, r * 0.25);
+                }
                 ctx.fillStyle = 'black';
                 const text = i + ' ' + j;
                 ctx.fillText(text, 0 - ctx.measureText(text).width / 2, 4);
@@ -384,6 +389,47 @@ export class ScreenManager {
             ctx.fillRect(timerBarX, timerBarTop, timerBarW, timerBarH);
             ctx.fillStyle = '#f76f03';
             ctx.fillRect(timerBarX, timerBarTop + timerBarH * (1 - timerFill), timerBarW, timerBarH * timerFill);
+            ctx.restore();
+        }
+
+        // Gem bar: evenly-spread gem dots right of the hex field
+        {
+            const gemR = 6;
+            const gemGap = 6;
+            const topStone = this.scaler.storeToScreen(2 * this.size - 2, this.size - 1);
+            const botStone = this.scaler.storeToScreen(2 * this.size - 2, 2 * this.size - 2);
+            const cx = topStone.x + r0 + gemGap + gemR;
+            const barTop = topStone.y;
+            const barH = botStone.y - topStone.y;
+
+            ctx.save();
+
+            ctx.strokeStyle = '#1a3a1a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(cx, barTop);
+            ctx.lineTo(cx, barTop + barH);
+            ctx.stroke();
+
+            const history = world.gemHistory;
+            for (let k = 0; k < history.length; k++) {
+                const t = history.length <= 1 ? 0 : k / (history.length - 1);
+                ctx.fillStyle = gemColors[history[k]];
+                ctx.beginPath();
+                ctx.arc(cx, barTop + t * barH, gemR, 0, tau);
+                ctx.fill();
+            }
+
+            ctx.fillStyle = '#2eb82e';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'bottom';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillText('×' + (world.gemMultiplierLevel + 1), cx, barTop - 4);
+
+            ctx.fillStyle = 'white';
+            ctx.textBaseline = 'top';
+            ctx.font = 'bold 10px sans-serif';
+            ctx.fillText(history.length.toString(), cx, botStone.y + 4);
             ctx.restore();
         }
 
