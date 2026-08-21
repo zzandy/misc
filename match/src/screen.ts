@@ -117,6 +117,7 @@ export class ScreenManager {
         canvas.addEventListener('mousemove', (e) => this.onMove(e));
         canvas.addEventListener('mousedown', (e) => this.onDown(e));
         canvas.addEventListener('mouseup', (e) => this.onUp(e));
+        canvas.addEventListener('mouseleave', (e) => this.onUp(e));
     }
 
     private onMove(e: MouseEvent): void {
@@ -197,7 +198,19 @@ export class ScreenManager {
                 tgt.color = origColor;
                 tgt.powerup = origPowerup;
                 tgt.hasGem = origHasGem;
-                this.world.activatedColor = origColor;
+                const candidate = origColor;
+                if (candidate === this.world.activatedColor) {
+                    this.world.activatedColorCount++;
+                    if (this.world.activatedColorCount >= this.world.maxConsecutiveActivations) {
+                        this.world.activatedColor = null;
+                        this.world.activatedColorCount = 0;
+                    } else {
+                        this.world.pendingColorEffect = candidate;
+                    }
+                } else {
+                    this.world.activatedColor = candidate;
+                    this.world.activatedColorCount = 1;
+                }
             }
         }
 
@@ -534,6 +547,58 @@ export class ScreenManager {
             ctx.restore();
         } else {
             this.playAgainRect = null;
+        }
+
+        {
+            const circR = r0 * 0.28;
+            const ringDist = circR * 2.6;
+            const pad = circR * 0.6;
+            const wx = this.scaler.area.x + ringDist + circR + pad;
+            const wy = this.scaler.area.y + this.scaler.area.h - ringDist - circR - pad;
+
+            const activeColor = world.activatedColor;
+
+            let centerColor: number;
+            let ringColors: number[];
+
+            if (activeColor === null || activeColor === 6) {
+                centerColor = 6;
+                ringColors = [0, 1, 2, 3, 4, 5];
+            } else {
+                centerColor = activeColor;
+                ringColors = [0, 1, 2, 3, 4, 5].filter(c => c !== activeColor);
+                ringColors.push(6);
+            }
+
+            ctx.save();
+            ctx.globalAlpha = 0.75;
+            for (let k = 0; k < 6; k++) {
+                const rx = wx + Math.sin(k * Math.PI / 3) * ringDist;
+                const ry = wy - Math.cos(k * Math.PI / 3) * ringDist;
+                ctx.fillStyle = colors[ringColors[k]];
+                ctx.beginPath();
+                ctx.arc(rx, ry, circR, 0, tau);
+                ctx.fill();
+            }
+            ctx.restore();
+
+            ctx.save();
+            if (activeColor !== null) {
+                ctx.fillStyle = colors[centerColor];
+                ctx.beginPath();
+                ctx.arc(wx, wy, circR * 1.55, 0, tau);
+                ctx.fill();
+                ctx.strokeStyle = 'white';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            } else {
+                ctx.globalAlpha = 0.35;
+                ctx.fillStyle = colors[6];
+                ctx.beginPath();
+                ctx.arc(wx, wy, circR * 0.9, 0, tau);
+                ctx.fill();
+            }
+            ctx.restore();
         }
     }
 }

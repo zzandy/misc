@@ -1,7 +1,7 @@
 import { Loop } from '../../lib/loop';
 import { ScreenManager } from './screen';
 import { World, Cell, Burst, Fall } from './world';
-import { rnd } from '../../lib/util';
+import { rnd, shuffle } from '../../lib/util';
 import { Vector } from './geometry';
 import { HexStore } from './store';
 
@@ -176,6 +176,7 @@ function resetWorld(w: World): void {
     w.dragStart = null;
     w.dragDir = null;
     w.activatedColor = null;
+    w.activatedColorCount = 0;
     w.shufflePending = false;
     w.shuffleCheckTimer = 0;
     w.wiggleCell = null;
@@ -197,6 +198,7 @@ function resetWorld(w: World): void {
     w.gemBarCount = 0;
     w.gemMultiplierLevel = 0;
     w.gemHistory = [];
+    w.pendingColorEffect = null;
     w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null, hasGem: Math.random() < w.gemChance, powerup: null }));
 }
 
@@ -213,6 +215,8 @@ function init(): World {
         dragStart: null,
         dragDir: null,
         activatedColor: null,
+        activatedColorCount: 0,
+        maxConsecutiveActivations: 3,
         shufflePending: false,
         shuffleCheckDelay: 10000,
         shuffleCheckTimer: 0,
@@ -252,7 +256,8 @@ function init(): World {
         gemBarCount: 0,
         gemMultiplierLevel: 0,
         gemHistory: [],
-        clockPowerupTime: 5000
+        clockPowerupTime: 5000,
+        pendingColorEffect: null
     };
 
     world.cells = new HexStore<Cell>(size, () => ({
@@ -284,7 +289,98 @@ function grantPowerup(state: World, type: 'bomb' | 'clock' | 'asterisk', exclude
     candidates[rnd(candidates.length)].powerup = type;
 }
 
+function applyColorEffect(state: World, color: number): void {
+    const w = 2 * state.size - 1;
+    if (color === 0) {
+        // Yellow: 2 seconds of double score
+        state.doubleScoreTimer = 2000;
+    } else if (color === 1) {
+        // Red: burst a random cell and its 6 neighbors
+        const stable: [number, number][] = [];
+        state.cells.each((i, j, c) => { if (c.change === null) stable.push([i, j]); });
+        if (stable.length === 0) return;
+        const [ci, cj] = stable[rnd(stable.length)];
+        const center = state.cells.get(ci, cj);
+        if (center !== undefined && center.change === null) center.change = new Burst();
+        for (const [di, dj] of dirs) {
+            const nb = state.cells.get(ci + di, cj + dj);
+            if (nb !== undefined && nb.change === null) nb.change = new Burst();
+        }
+    } else if (color === 2) {
+        // Blue: burst a random row or diagonal
+        const lineType = rnd(3);
+        if (lineType === 0) {
+            const j = rnd(w);
+            for (let i = 0; i < w; i++) {
+                const c = state.cells.get(i, j);
+                if (c !== undefined && c.change === null) c.change = new Burst();
+            }
+        } else if (lineType === 1) {
+            const k = rnd(w) - (state.size - 1);
+            for (let i = 0; i < w; i++) {
+                const j = i + k;
+                const c = state.cells.get(i, j);
+                if (c !== undefined && c.change === null) c.change = new Burst();
+            }
+        } else {
+            const k = rnd(2 * w - 1);
+            for (let i = 0; i < w; i++) {
+                const j = k - i;
+                const c = state.cells.get(i, j);
+                if (c !== undefined && c.change === null) c.change = new Burst();
+            }
+        }
+    } else if (color === 3) {
+        // Cyan: burst 3 random gem stones; plant gems on 3 random non-gem stones
+        const gemCoords: [number, number][] = [];
+        const nonGemCells: Cell[] = [];
+        state.cells.each((i, j, c) => {
+            if (c.change === null) {
+                if (c.hasGem) gemCoords.push([i, j]);
+                else nonGemCells.push(c);
+            }
+        });
+        shuffle(gemCoords);
+        for (let k = 0; k < Math.min(3, gemCoords.length); k++) {
+            const [gi, gj] = gemCoords[k];
+            const c = state.cells.get(gi, gj);
+            if (c !== undefined && c.change === null) c.change = new Burst();
+        }
+        shuffle(nonGemCells);
+        for (let k = 0; k < Math.min(3, nonGemCells.length); k++) {
+            nonGemCells[k].hasGem = true;
+        }
+    } else if (color === 4) {
+        // Orange: add 5 seconds to the timer
+        state.timerValue = Math.min(state.timerValue + 5000, state.timerMax);
+    } else if (color === 5) {
+        // Purple: add random powerups to 2 random stones
+        const candidates: Cell[] = [];
+        state.cells.each((_i, _j, c) => { if (c.change === null && c.powerup === null) candidates.push(c); });
+        shuffle(candidates);
+        const powerupTypes: Array<'bomb' | 'clock' | 'asterisk'> = ['bomb', 'clock', 'asterisk'];
+        for (let k = 0; k < Math.min(2, candidates.length); k++) {
+            candidates[k].powerup = powerupTypes[rnd(3)];
+        }
+    } else if (color === 6) {
+        // Grey: recolor 20% of all stable stones to a random color
+        const targetColor = rnd(state.numColors);
+        const allStable: Cell[] = [];
+        state.cells.each((_i, _j, c) => { if (c.change === null) allStable.push(c); });
+        shuffle(allStable);
+        const count = Math.ceil(allStable.length * 0.2);
+        for (let k = 0; k < count; k++) {
+            allStable[k].color = targetColor;
+        }
+    }
+}
+
 function update(delta: number, state: World) {
+    if (state.pendingColorEffect !== null) {
+        applyColorEffect(state, state.pendingColorEffect);
+        state.pendingColorEffect = null;
+    }
+
     const runs = state.gameOver ? [] : collectRuns(state.cells);
     const groups = mergeRuns(runs);
     if (groups.length > 0 && !state.timerActive) state.timerActive = true;
@@ -493,6 +589,7 @@ function update(delta: number, state: World) {
                 state.colorBiasTimer = state.colorBiasFairDuration;
             }
         }
+
     }
 
     return state;

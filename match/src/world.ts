@@ -17,6 +17,8 @@ export type World = {
     dragStart: [number, number] | null,
     dragDir: [number, number] | null,
     activatedColor: number | null,
+    activatedColorCount: number,
+    maxConsecutiveActivations: number,
     shufflePending: boolean,
     shuffleCheckDelay: number,
     shuffleCheckTimer: number,
@@ -56,7 +58,8 @@ export type World = {
     gemBarCount: number,
     gemMultiplierLevel: number,
     gemHistory: number[],
-    clockPowerupTime: number
+    clockPowerupTime: number,
+    pendingColorEffect: number | null
 };
 
 export interface IChange {
