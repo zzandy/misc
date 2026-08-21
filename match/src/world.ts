@@ -21,7 +21,12 @@ export type World = {
     wiggleCell: [number, number] | null,
     wiggleTimer: number,
     wiggleDuration: number,
-    wiggleHintInterval: number
+    wiggleHintInterval: number,
+    colorBiasTimer: number,
+    colorBiasActive: boolean,
+    colorBiasColor: number,
+    colorBiasFairDuration: number,
+    colorBiasBiasedDuration: number
 };
 
 export interface IChange {

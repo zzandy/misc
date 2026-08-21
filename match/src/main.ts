@@ -152,23 +152,24 @@ function shuffleBoard(store: HexStore<Cell>, size: number): void {
     }
 }
 
+function randomStoneColor(world: World): number {
+    if (!world.colorBiasActive) return rnd(world.numColors);
+    const pool: number[] = [];
+    for (let c = 0; c < world.numColors; c++) pool.push(c);
+    pool.push(world.colorBiasColor, world.colorBiasColor);
+    return pool[rnd(pool.length)];
+}
+
 const loop = new Loop(1000 / 60, init, update, (delta, world) => renderer.render(delta, world));
 loop.start();
 
 function init(): World {
-
     const numColors = 7;
-
-    const cells = new HexStore<Cell>(size, (i, j) => ({
-        color: rnd(numColors),
-        spring: new Vector(0, 0),
-        change: null
-    }));
 
     const world: World = {
         size,
         numColors,
-        cells,
+        cells: new HexStore<Cell>(size, () => ({ color: 0, change: null })),
         dragStart: null,
         dragDir: null,
         activatedColor: null,
@@ -178,16 +179,25 @@ function init(): World {
         wiggleCell: null,
         wiggleTimer: 0,
         wiggleDuration: 500,
-        wiggleHintInterval: 5000
+        wiggleHintInterval: 5000,
+        colorBiasFairDuration: 12000,
+        colorBiasBiasedDuration: 6000,
+        colorBiasTimer: 12000,
+        colorBiasActive: false,
+        colorBiasColor: 0
     };
+
+    world.cells = new HexStore<Cell>(size, () => ({
+        color: randomStoneColor(world),
+        change: null
+    }));
 
     window.addEventListener('keydown', e => {
         if (e.code == "KeyR") {
-            world.cells = new HexStore<Cell>(size, (i, j) => ({
-                color: rnd(numColors),
-                spring: new Vector(0, 0),
+            world.cells = new HexStore<Cell>(size, () => ({
+                color: randomStoneColor(world),
                 change: null
-            }))
+            }));
         }
     });
 
@@ -231,7 +241,7 @@ function update(delta: number, state: World) {
 
                     if (next === undefined) {
                         prev.change = new Fall(drop);
-                        prev.color = rnd(state.numColors);
+                        prev.color = randomStoneColor(state);
                         --tgt;
                     }
                     else if (next.change == null) {
@@ -292,6 +302,18 @@ function update(delta: number, state: World) {
                     state.shuffleCheckTimer = state.wiggleHintInterval;
                 }
             }
+        }
+    }
+
+    state.colorBiasTimer -= delta;
+    if (state.colorBiasTimer <= 0) {
+        if (!state.colorBiasActive) {
+            state.colorBiasActive = true;
+            state.colorBiasColor = rnd(state.numColors);
+            state.colorBiasTimer = state.colorBiasBiasedDuration;
+        } else {
+            state.colorBiasActive = false;
+            state.colorBiasTimer = state.colorBiasFairDuration;
         }
     }
 
