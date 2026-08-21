@@ -14,7 +14,14 @@ export type World = {
     cells: HexStore<Cell>,
     dragStart: [number, number] | null,
     dragDir: [number, number] | null,
-    activatedColor: number | null
+    activatedColor: number | null,
+    shufflePending: boolean,
+    shuffleCheckDelay: number,
+    shuffleCheckTimer: number,
+    wiggleCell: [number, number] | null,
+    wiggleTimer: number,
+    wiggleDuration: number,
+    wiggleHintInterval: number
 };
 
 export interface IChange {

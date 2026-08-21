@@ -233,6 +233,8 @@ export class ScreenManager {
         world.cells.each((i, j, cell) => {
             const isDragSource = world.dragStart != null && world.dragDir != null
                 && i === world.dragStart[0] && j === world.dragStart[1];
+            const isWiggle = world.wiggleTimer > 0 && world.wiggleCell != null
+                && world.wiggleCell[0] === i && world.wiggleCell[1] === j;
 
             ctx.save();
             ctx.strokeStyle = 'white';
@@ -249,6 +251,11 @@ export class ScreenManager {
                 const c = cell.change;
                 const dy = c.dropHeight * fade((c.dropHeight - c.phase) / c.dropHeight);
                 ctx.translate(0, -dy * r0 * 2);
+            }
+            else if (isWiggle) {
+                const t = (world.wiggleDuration - world.wiggleTimer) / world.wiggleDuration;
+                const wobble = Math.sin(t * Math.PI * 6) * Math.sin(t * Math.PI) * r0 * 0.09;
+                ctx.translate(wobble, 0);
             }
 
             if (isDragSource) {
