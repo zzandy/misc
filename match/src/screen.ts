@@ -1,14 +1,101 @@
 import { fullscreenCanvas } from '../../lib/canvas';
-import { World, Cell, Burst, Fall } from './world';
+import { World, Cell, Burst, Fall, ParticleSource } from './world';
 import { Vector, AABB } from './geometry';
 import { tau } from './util';
 
 const colors = ['#fed203', '#d6050d', '#1337b2', '#079ecd', '#f76f03', '#8e0c70', '#cbcbcb'];
-const gemColors = ['#8e0c70', '#079ecd', '#fed203', '#d6050d', '#1337b2', '#fed203', '#000000'];
+const gemColors = ['#1337b2', '#f76f03', '#fed203', '#d6050d', '#8e0c70', '#ffffff', '#d6050d'];
+
+// gem shape index per stone color: blue→circle, orange→hexagon, yellow→rect, red→cuts, purple→oct, white→oct-pointy, red→cuts
+const gemShapes = [0, 3, 2, 1, 5, 6, 1];
 
 const sq32 = Math.sqrt(3) / 2;
 
+const BAR_GAP = 10;
+const TIMER_BAR_W = 12;
+const GEM_BAR_R = 6;
+
 const hexDirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]];
+
+function fillRoundedPolygon(ctx: CanvasRenderingContext2D, n: number, R: number, rot: number, cornerR: number): void {
+    const pts: [number, number][] = [];
+    for (let k = 0; k < n; k++) {
+        const a = rot + (k / n) * tau;
+        pts.push([R * Math.cos(a), R * Math.sin(a)]);
+    }
+    const path = new Path2D();
+    for (let k = 0; k < n; k++) {
+        const p = pts[k];
+        const prev = pts[(k + n - 1) % n];
+        const next = pts[(k + 1) % n];
+        const dx1 = prev[0] - p[0], dy1 = prev[1] - p[1];
+        const dx2 = next[0] - p[0], dy2 = next[1] - p[1];
+        const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+        const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+        const cr = Math.min(cornerR, len1 / 2, len2 / 2);
+        const p1x = p[0] + dx1 / len1 * cr, p1y = p[1] + dy1 / len1 * cr;
+        if (k === 0) path.moveTo(p1x, p1y);
+        else path.lineTo(p1x, p1y);
+        path.arcTo(p[0], p[1], p[0] + dx2 / len2 * cr, p[1] + dy2 / len2 * cr, cr);
+    }
+    path.closePath();
+    ctx.fill(path);
+}
+
+function drawShape(ctx: CanvasRenderingContext2D, r: number, shapeIndex: number): void {
+    if (shapeIndex === 0) {
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, tau); ctx.fill(); return;
+    }
+    if (shapeIndex === 1) {
+        const a = r * 0.62, k = r * 0.38;
+        const p = new Path2D();
+        p.moveTo(-a, -a);
+        p.quadraticCurveTo(0, -a - k, a, -a);
+        p.quadraticCurveTo(a - k, 0, a, a);
+        p.quadraticCurveTo(0, a + k, -a, a);
+        p.quadraticCurveTo(-a + k, 0, -a, -a);
+        p.closePath();
+        ctx.fill(p);
+        ctx.stroke(p);
+        return;
+    }
+    if (shapeIndex === 2) {
+        const s = r * 0.78, c = r * 0.22;
+        ctx.beginPath();
+        ctx.moveTo(-s + c, -s);
+        ctx.lineTo(s - c, -s);
+        ctx.lineTo(s, -s + c);
+        ctx.lineTo(s, s - c);
+        ctx.lineTo(s - c, s);
+        ctx.lineTo(-s + c, s);
+        ctx.lineTo(-s, s - c);
+        ctx.lineTo(-s, -s + c);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        return;
+    }
+    if (shapeIndex === 3) { fillRoundedPolygon(ctx, 6, r * 0.9, 0, r * 0.15); return; }
+    if (shapeIndex === 4) {
+        const s = r * 0.78, c = r * 0.22, rot = 0.7071;
+        const verts: [number, number][] = [
+            [-s + c, -s], [s - c, -s], [s, -s + c], [s, s - c],
+            [s - c, s], [-s + c, s], [-s, s - c], [-s, -s + c]
+        ];
+        ctx.beginPath();
+        for (let k = 0; k < verts.length; k++) {
+            const [x, y] = verts[k];
+            const rx = (x - y) * rot, ry = (x + y) * rot;
+            if (k === 0) ctx.moveTo(rx, ry); else ctx.lineTo(rx, ry);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        return;
+    }
+    if (shapeIndex === 5) { fillRoundedPolygon(ctx, 8, r * 0.88, Math.PI / 8, r * 0.12); return; }
+    fillRoundedPolygon(ctx, 8, r * 0.88, 0, r * 0.12);
+}
 
 export class HexScaler {
     public readonly area: AABB;
@@ -63,10 +150,10 @@ export class HexScaler {
 export class ScreenManager {
     private readonly ctx = fullscreenCanvas();
     private pos: Vector = new Vector(0, 0);
-    private readonly scaler: HexScaler;
+    private scaler!: HexScaler;
     private readonly size: number;
     private active: [number, number] | null = null;
-    private readonly clipPath: Path2D;
+    private clipPath!: Path2D;
     private world: World | null = null;
     private multiplierBarDisplay = 0;
     private multiplierBarLevel = 0;
@@ -75,13 +162,29 @@ export class ScreenManager {
 
     constructor(size: number) {
         this.size = size;
-        let canvas = this.ctx.canvas;
-        let { width, height } = canvas;
+        this.resize();
 
-        this.scaler = new HexScaler(size, new AABB(10, 10, width - 20, height - 20));
+        const canvas = this.ctx.canvas;
+        canvas.addEventListener('mousemove', (e) => this.onMove(e));
+        canvas.addEventListener('mousedown', (e) => this.onDown(e));
+        canvas.addEventListener('mouseup', (e) => this.onUp(e));
+        canvas.addEventListener('mouseleave', (e) => this.onUp(e));
+        window.addEventListener('resize', () => this.resize());
+    }
+
+    private resize(): void {
+        const canvas = this.ctx.canvas;
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        const { width, height } = canvas;
+        const size = this.size;
+
+        const hexPadL = 5 + TIMER_BAR_W + BAR_GAP;
+        const hexPadR = 5 + GEM_BAR_R * 2 + BAR_GAP;
+        this.scaler = new HexScaler(size, new AABB(hexPadL, 40, width - hexPadL - hexPadR, height - 50));
         const a = this.scaler.r;
         const sctr = tau / 12;
-        const ctx = new Path2D();
+        const path = new Path2D();
 
         [
             this.scaler.storeToScreen(0, 0).add(new Vector(-a, 0)),
@@ -103,21 +206,14 @@ export class ScreenManager {
             this.scaler.storeToScreen(0, size - 1),
         ].forEach((p, i) => {
             if (i % 2 == 0) {
-                if (i == 0) ctx.moveTo(p.x, p.y);
-                else ctx.lineTo(p.x, p.y)
-            }
-            else {
-                let n = (i - 1) / 2;
-                ctx.arc(p.x, p.y, a, sctr * (i + 5), sctr * (i + 7));
+                if (i == 0) path.moveTo(p.x, p.y);
+                else path.lineTo(p.x, p.y);
+            } else {
+                path.arc(p.x, p.y, a, sctr * (i + 5), sctr * (i + 7));
             }
         });
 
-        this.clipPath = ctx;
-
-        canvas.addEventListener('mousemove', (e) => this.onMove(e));
-        canvas.addEventListener('mousedown', (e) => this.onDown(e));
-        canvas.addEventListener('mouseup', (e) => this.onUp(e));
-        canvas.addEventListener('mouseleave', (e) => this.onUp(e));
+        this.clipPath = path;
     }
 
     private onMove(e: MouseEvent): void {
@@ -252,6 +348,41 @@ export class ScreenManager {
         return found;
     }
 
+    private resolveParticlePos(p: ParticleSource): [number, number] {
+        const r0 = this.scaler.r;
+        if (p.kind === 'cell') {
+            const s = this.scaler.storeToScreen(p.i, p.j);
+            return [s.x, s.y];
+        }
+        const canvas = this.ctx.canvas;
+        switch (p.name) {
+            case 'color-indicator': {
+                const circR = r0 * 0.28;
+                const ringDist = circR * 2.6;
+                const pad = circR * 0.6;
+                return [
+                    this.scaler.area.x + ringDist + circR + pad,
+                    this.scaler.area.y + this.scaler.area.h - ringDist - circR - pad
+                ];
+            }
+            case 'score':
+                return [canvas.width - 10, 15];
+            case 'timer-bar': {
+                const topStone = this.scaler.storeToScreen(0, 0);
+                const botStone = this.scaler.storeToScreen(0, this.size - 1);
+                const timerBarX = topStone.x - r0 - BAR_GAP - TIMER_BAR_W;
+                const timerBarH = botStone.y - topStone.y;
+                return [timerBarX + TIMER_BAR_W / 2, topStone.y + timerBarH / 2];
+            }
+            case 'gem-bar': {
+                const topStone = this.scaler.storeToScreen(2 * this.size - 2, this.size - 1);
+                const botStone = this.scaler.storeToScreen(2 * this.size - 2, 2 * this.size - 2);
+                const cx = topStone.x + r0 + BAR_GAP + GEM_BAR_R;
+                return [cx, botStone.y];
+            }
+        }
+    }
+
     public render(delta: number, world: World) {
         this.world = world;
 
@@ -267,7 +398,7 @@ export class ScreenManager {
         ctx.clip(this.clipPath);
 
         world.cells.each((i, j, cell) => {
-            const isDragSource = world.dragStart != null && world.dragDir != null
+            const isDragSource = world.dragStart != null
                 && i === world.dragStart[0] && j === world.dragStart[1];
             const isWiggle = world.wiggleTimer > 0 && world.wiggleCell != null
                 && world.wiggleCell[0] === i && world.wiggleCell[1] === j;
@@ -301,10 +432,16 @@ export class ScreenManager {
             } else {
                 if (this.active != null && this.active[0] == i && this.active[1] == j)
                     ctx.strokeCircle(0, 0, r);
-                ctx.fillCircle(0, 0, r);
+                drawShape(ctx, r, cell.color);
                 if (cell.hasGem) {
                     ctx.fillStyle = gemColors[cell.color];
-                    ctx.fillCircle(0, 0, r * 0.25);
+                    drawShape(ctx, r * 0.32, gemShapes[cell.color]);
+                } else {
+                    ctx.save();
+                    ctx.globalAlpha = 0.4;
+                    ctx.fillStyle = '#000000';
+                    drawShape(ctx, r * 0.32, gemShapes[cell.color]);
+                    ctx.restore();
                 }
                 if (cell.powerup !== null) {
                     const ix = r * 0.52;
@@ -357,31 +494,54 @@ export class ScreenManager {
             ctx.restore();
         });
 
-        if (world.dragStart != null && world.dragDir != null) {
+        if (world.dragStart != null) {
             const [si, sj] = world.dragStart;
-            const [di, dj] = world.dragDir;
             const cell = world.cells.get(si, sj);
             if (cell != null) {
-                const startPos = this.scaler.storeToScreen(si, sj);
-                const targetPos = this.scaler.storeToScreen(si + di, sj + dj);
-                const ex = targetPos.x - startPos.x;
-                const ey = targetPos.y - startPos.y;
-                const len2 = ex * ex + ey * ey;
-                const px = this.pos.x - startPos.x;
-                const py = this.pos.y - startPos.y;
-                const t = len2 > 0 ? Math.max(0, Math.min(0.5, (px * ex + py * ey) / len2)) : 0;
-
+                const startScreen = this.scaler.storeToScreen(si, sj);
+                const dx = this.pos.x - startScreen.x;
+                const dy = this.pos.y - startScreen.y;
+                const cursorDist = Math.sqrt(dx * dx + dy * dy);
+                const maxDist = r;
+                const stoneDist = cursorDist / (1 + cursorDist / maxDist);
+                let drawX = startScreen.x;
+                let drawY = startScreen.y;
+                if (cursorDist > 0) {
+                    drawX += (dx / cursorDist) * stoneDist;
+                    drawY += (dy / cursorDist) * stoneDist;
+                }
                 ctx.save();
-                ctx.translate(startPos.x + ex * t, startPos.y + ey * t);
-                ctx.globalAlpha = 0.75;
+                ctx.translate(drawX, drawY);
+                ctx.globalAlpha = 0.5;
                 ctx.fillStyle = colors[cell.color];
-                ctx.fillCircle(0, 0, r);
+                drawShape(ctx, r, cell.color);
                 ctx.globalAlpha = 1;
                 ctx.restore();
             }
         }
 
         ctx.restore();
+
+        for (const p of world.particles) {
+            if (p.delay > 0) continue;
+            const [sx, sy] = this.resolveParticlePos(p.source);
+            const [tx, ty] = this.resolveParticlePos(p.target);
+            const dx = tx - sx, dy = ty - sy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const arcHeight = Math.max(40, dist * 0.25);
+            ctx.save();
+            ctx.fillStyle = p.color;
+            for (let step = 3; step >= 0; step--) {
+                const tt = step === 0 ? p.t : Math.max(0, p.t - step * 0.05);
+                const trailX = sx + dx * tt;
+                const trailY = sy + dy * tt - arcHeight * 4 * tt * (1 - tt);
+                ctx.globalAlpha = step === 0 ? 1 : (4 - step) / 12;
+                ctx.beginPath();
+                ctx.arc(trailX, trailY, 5, 0, tau);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
 
         const area = this.scaler.area;
 
@@ -399,18 +559,16 @@ export class ScreenManager {
         // Multiplier bar: along the top-right diagonal edge, from stone (size-1,0) to stone (2*size-2, size-1)
         {
             const barThick = 12;
-            const barGap = 6;
             const edgeStart = this.scaler.storeToScreen(this.size - 1, 0);
             const edgeEnd = this.scaler.storeToScreen(2 * this.size - 2, this.size - 1);
             const edgeDx = edgeEnd.x - edgeStart.x;
             const edgeDy = edgeEnd.y - edgeStart.y;
             const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
             const edgeAngle = Math.atan2(edgeDy, edgeDx);
-            // Outward perpendicular: clockwise 90° from edge direction
             const perpX = edgeDy / edgeLen;
             const perpY = -edgeDx / edgeLen;
-            const ox = perpX * (r0 + barGap + barThick / 2);
-            const oy = perpY * (r0 + barGap + barThick / 2);
+            const ox = perpX * (r0 + BAR_GAP + barThick / 2);
+            const oy = perpY * (r0 + BAR_GAP + barThick / 2);
 
             ctx.save();
             ctx.translate(edgeStart.x + ox, edgeStart.y + oy);
@@ -427,40 +585,36 @@ export class ScreenManager {
             ctx.restore();
         }
 
-        // Score: top-right corner of bounding box — right edge x, top edge y
+        // Score: canvas top-right corner, above the hex field
         ctx.save();
         ctx.textAlign = 'right';
         ctx.textBaseline = 'top';
         ctx.font = 'bold 28px sans-serif';
         ctx.fillStyle = world.doubleScoreTimer > 0 ? '#ffd700' : 'white';
-        ctx.fillText(Math.floor(world.score).toString(), area.x + area.w, area.y);
+        ctx.fillText(Math.floor(world.score).toString(), width - 10, 10);
         ctx.restore();
 
         // Timer bar: vertical bar left of the hex field, aligned with top/bottom stone centers in column 0
         {
-            const timerBarW = 12;
-            const timerGap = 6;
             const topStone = this.scaler.storeToScreen(0, 0);
             const botStone = this.scaler.storeToScreen(0, this.size - 1);
-            const timerBarX = topStone.x - r0 - timerGap - timerBarW;
+            const timerBarX = topStone.x - r0 - BAR_GAP - TIMER_BAR_W;
             const timerBarTop = topStone.y;
             const timerBarH = botStone.y - topStone.y;
             const timerFill = world.timerMax > 0 ? world.timerValue / world.timerMax : 0;
             ctx.save();
             ctx.fillStyle = '#1a0800';
-            ctx.fillRect(timerBarX, timerBarTop, timerBarW, timerBarH);
+            ctx.fillRect(timerBarX, timerBarTop, TIMER_BAR_W, timerBarH);
             ctx.fillStyle = '#f76f03';
-            ctx.fillRect(timerBarX, timerBarTop + timerBarH * (1 - timerFill), timerBarW, timerBarH * timerFill);
+            ctx.fillRect(timerBarX, timerBarTop + timerBarH * (1 - timerFill), TIMER_BAR_W, timerBarH * timerFill);
             ctx.restore();
         }
 
         // Gem bar: evenly-spread gem dots right of the hex field
         {
-            const gemR = 6;
-            const gemGap = 6;
             const topStone = this.scaler.storeToScreen(2 * this.size - 2, this.size - 1);
             const botStone = this.scaler.storeToScreen(2 * this.size - 2, 2 * this.size - 2);
-            const cx = topStone.x + r0 + gemGap + gemR;
+            const cx = topStone.x + r0 + BAR_GAP + GEM_BAR_R;
             const barTop = topStone.y;
             const barH = botStone.y - topStone.y;
 
@@ -478,7 +632,7 @@ export class ScreenManager {
                 const t = history.length <= 1 ? 0 : k / (history.length - 1);
                 ctx.fillStyle = gemColors[history[k]];
                 ctx.beginPath();
-                ctx.arc(cx, barTop + t * barH, gemR, 0, tau);
+                ctx.arc(cx, barTop + t * barH, GEM_BAR_R, 0, tau);
                 ctx.fill();
             }
 
@@ -492,6 +646,22 @@ export class ScreenManager {
             ctx.textBaseline = 'top';
             ctx.font = 'bold 10px sans-serif';
             ctx.fillText(history.length.toString(), cx, botStone.y + 4);
+            ctx.restore();
+        }
+
+        // Score popups
+        if (world.scorePopups.length > 0) {
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 22px sans-serif';
+            for (const popup of world.scorePopups) {
+                const t = popup.age / world.scorePopupDuration;
+                const pos = this.scaler.storeToScreen(popup.i, popup.j);
+                ctx.globalAlpha = 1 - t;
+                ctx.fillStyle = 'white';
+                ctx.fillText(popup.value.toString(), pos.x, pos.y - t * 40);
+            }
             ctx.restore();
         }
 
@@ -518,16 +688,22 @@ export class ScreenManager {
             cy += 46;
 
             const raw = localStorage.getItem('match-scores');
-            const scores: number[] = raw ? JSON.parse(raw) : [];
+            const rawParsed: ({ score: number, date: string } | number)[] = raw ? JSON.parse(raw) : [];
+            const scores = rawParsed.map(e => typeof e === 'number' ? { score: e, date: '' } : e);
             ctx.font = 'bold 16px sans-serif';
             ctx.fillStyle = '#cccccc';
             ctx.fillText('Top Scores', cx, cy);
             cy += 26;
             ctx.font = '15px sans-serif';
+            const currentScore = Math.floor(world.score);
+            let highlighted = false;
             for (let k = 0; k < scores.length; k++) {
-                const isCurrentGame = k === 0;
+                const entry = scores[k];
+                const isCurrentGame = !highlighted && entry.score === currentScore;
+                if (isCurrentGame) highlighted = true;
                 ctx.fillStyle = isCurrentGame ? '#f76f03' : 'white';
-                ctx.fillText((k + 1) + '.  ' + scores[k], cx, cy);
+                const age = scoreAge(entry.date);
+                ctx.fillText((k + 1) + '.  ' + entry.score + '   ' + age, cx, cy);
                 cy += 20;
             }
             cy += 12;
@@ -601,6 +777,21 @@ export class ScreenManager {
             ctx.restore();
         }
     }
+}
+
+function scoreAge(isoDate: string): string {
+    if (!isoDate) return '—';
+    const s = (Date.now() - new Date(isoDate).getTime()) / 1000;
+    if (s < 60) return 'just now';
+    const m = s / 60;
+    if (m < 60) return Math.floor(m) + 'm ago';
+    const h = m / 60;
+    if (h < 24) return Math.floor(h) + 'h ago';
+    const d = h / 24;
+    if (d < 30) return Math.floor(d) + 'd ago';
+    const mo = d / 30;
+    if (mo < 12) return Math.floor(mo) + 'mo ago';
+    return new Date(isoDate).getFullYear().toString();
 }
 
 function fade(t: number): number { return t * t * t * (t * (t * 6 - 15) + 10); }

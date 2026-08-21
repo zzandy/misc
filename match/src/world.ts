@@ -10,6 +10,37 @@ export type Cell = {
     powerup: 'bomb' | 'clock' | 'asterisk' | null
 };
 
+export type ScorePopup = {
+    i: number,
+    j: number,
+    value: number,
+    age: number
+};
+
+export type ParticleSource =
+    | { kind: 'cell'; i: number; j: number }
+    | { kind: 'ui'; name: 'color-indicator' | 'score' | 'timer-bar' | 'gem-bar' };
+
+export type ParticleTarget = ParticleSource;
+
+export type ParticlePayload =
+    | { kind: 'burst-cell'; i: number; j: number }
+    | { kind: 'double-score' }
+    | { kind: 'add-time'; ms: number }
+    | { kind: 'assign-powerup'; i: number; j: number; powerup: 'bomb' | 'clock' | 'asterisk' }
+    | { kind: 'recolor'; i: number; j: number; color: number }
+    | { kind: 'gem-credit'; i: number; j: number };
+
+export type Particle = {
+    source: ParticleSource;
+    target: ParticleTarget;
+    delay: number;
+    t: number;
+    duration: number;
+    color: string;
+    payload: ParticlePayload;
+};
+
 export type World = {
     size: number,
     numColors: number,
@@ -59,7 +90,12 @@ export type World = {
     gemMultiplierLevel: number,
     gemHistory: number[],
     clockPowerupTime: number,
-    pendingColorEffect: number | null
+    pendingColorEffect: number | null,
+    scorePopups: ScorePopup[],
+    scorePopupDuration: number,
+    particles: Particle[],
+    particleSpeed: number,
+    particleMaxDuration: number
 };
 
 export interface IChange {

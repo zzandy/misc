@@ -1,6 +1,6 @@
 import { Loop } from '../../lib/loop';
 import { ScreenManager } from './screen';
-import { World, Cell, Burst, Fall } from './world';
+import { World, Cell, Burst, Fall, ParticleSource, ParticleTarget, ParticlePayload } from './world';
 import { rnd, shuffle } from '../../lib/util';
 import { Vector } from './geometry';
 import { HexStore } from './store';
@@ -13,6 +13,57 @@ const renderer = new ScreenManager(size);
 renderer.onPlayAgain = () => { if (currentWorld != null) resetWorld(currentWorld); };
 
 const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]];
+
+const PALETTE = ['#fed203', '#d6050d', '#1337b2', '#079ecd', '#f76f03', '#8e0c70', '#cbcbcb'];
+
+function spawnParticle(world: World, source: ParticleSource, target: ParticleTarget, delay: number, color: string, payload: ParticlePayload): void {
+    world.particles.push({ source, target, delay, t: 0, duration: world.particleMaxDuration, color, payload });
+}
+
+function firePayload(state: World, payload: ParticlePayload): void {
+    if (payload.kind === 'burst-cell') {
+        const ci = payload.i, cj = payload.j;
+        const cell = state.cells.get(ci, cj);
+        if (cell !== undefined && cell.change === null) {
+            if (cell.hasGem) {
+                cell.hasGem = false;
+                state.gemHistory.push(cell.color);
+                spawnParticle(state, { kind: 'cell', i: ci, j: cj }, { kind: 'ui', name: 'gem-bar' }, 0, '#2eb82e', { kind: 'gem-credit', i: ci, j: cj });
+            }
+            cell.change = new Burst();
+        }
+        for (const [di, dj] of dirs) {
+            const ni = ci + di, nj = cj + dj;
+            const nb = state.cells.get(ni, nj);
+            if (nb !== undefined && nb.change === null) {
+                if (nb.hasGem) {
+                    nb.hasGem = false;
+                    state.gemHistory.push(nb.color);
+                    spawnParticle(state, { kind: 'cell', i: ni, j: nj }, { kind: 'ui', name: 'gem-bar' }, 0, '#2eb82e', { kind: 'gem-credit', i: ni, j: nj });
+                }
+                nb.change = new Burst();
+            }
+        }
+    } else if (payload.kind === 'double-score') {
+        state.doubleScoreTimer = 2000;
+    } else if (payload.kind === 'add-time') {
+        state.timerValue = Math.min(state.timerValue + payload.ms, state.timerMax);
+    } else if (payload.kind === 'assign-powerup') {
+        const cell = state.cells.get(payload.i, payload.j);
+        if (cell !== undefined && cell.change === null) cell.powerup = payload.powerup;
+    } else if (payload.kind === 'recolor') {
+        const cell = state.cells.get(payload.i, payload.j);
+        if (cell !== undefined && cell.change === null) cell.color = payload.color;
+    } else if (payload.kind === 'gem-credit') {
+        state.gemsCollected++;
+        state.gemBarCount++;
+        if (state.gemBarCount >= state.gemsPerMultiplierLevel) {
+            state.gemMultiplierLevel++;
+            state.gemBarCount -= state.gemsPerMultiplierLevel;
+            state.baseScoreMultiplier = 1 + state.gemMultiplierLevel * state.gemMultiplierBonus;
+        }
+    }
+}
 
 function collectRuns(store: HexStore<Cell>): Cell[][] {
     const runs: Cell[][] = [];
@@ -166,8 +217,12 @@ function randomStoneColor(world: World): number {
 function saveScoreToLocalStorage(score: number): void {
     const key = 'match-scores';
     const raw = localStorage.getItem(key);
-    const scores: number[] = raw ? JSON.parse(raw) : [];
-    scores.unshift(Math.floor(score));
+    const scores: { score: number, date: string }[] = raw
+        ? JSON.parse(raw).map((e: { score: number, date: string } | number) =>
+            typeof e === 'number' ? { score: e, date: '' } : e)
+        : [];
+    scores.push({ score: Math.floor(score), date: new Date().toISOString() });
+    scores.sort((a, b) => b.score - a.score);
     if (scores.length > 10) scores.length = 10;
     localStorage.setItem(key, JSON.stringify(scores));
 }
@@ -199,6 +254,8 @@ function resetWorld(w: World): void {
     w.gemMultiplierLevel = 0;
     w.gemHistory = [];
     w.pendingColorEffect = null;
+    w.scorePopups = [];
+    w.particles = [];
     w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null, hasGem: Math.random() < w.gemChance, powerup: null }));
 }
 
@@ -257,7 +314,12 @@ function init(): World {
         gemMultiplierLevel: 0,
         gemHistory: [],
         clockPowerupTime: 5000,
-        pendingColorEffect: null
+        pendingColorEffect: null,
+        scorePopups: [],
+        scorePopupDuration: 1000,
+        particles: [],
+        particleSpeed: 0.6,
+        particleMaxDuration: 600
     };
 
     world.cells = new HexStore<Cell>(size, () => ({
@@ -291,47 +353,49 @@ function grantPowerup(state: World, type: 'bomb' | 'clock' | 'asterisk', exclude
 
 function applyColorEffect(state: World, color: number): void {
     const w = 2 * state.size - 1;
+    const src: ParticleSource = { kind: 'ui', name: 'color-indicator' };
+
     if (color === 0) {
-        // Yellow: 2 seconds of double score
-        state.doubleScoreTimer = 2000;
+        spawnParticle(state, src, { kind: 'ui', name: 'score' }, 0, PALETTE[0], { kind: 'double-score' });
     } else if (color === 1) {
-        // Red: burst a random cell and its 6 neighbors
         const stable: [number, number][] = [];
         state.cells.each((i, j, c) => { if (c.change === null) stable.push([i, j]); });
         if (stable.length === 0) return;
-        const [ci, cj] = stable[rnd(stable.length)];
-        const center = state.cells.get(ci, cj);
-        if (center !== undefined && center.change === null) center.change = new Burst();
-        for (const [di, dj] of dirs) {
-            const nb = state.cells.get(ci + di, cj + dj);
-            if (nb !== undefined && nb.change === null) nb.change = new Burst();
-        }
+        shuffle(stable);
+        const [i1, j1] = stable[0];
+        const [i2, j2] = stable[Math.min(1, stable.length - 1)];
+        spawnParticle(state, src, { kind: 'cell', i: i1, j: j1 }, 0, PALETTE[1], { kind: 'burst-cell', i: i1, j: j1 });
+        spawnParticle(state, src, { kind: 'cell', i: i2, j: j2 }, state.particleMaxDuration + 150, PALETTE[1], { kind: 'burst-cell', i: i2, j: j2 });
     } else if (color === 2) {
-        // Blue: burst a random row or diagonal
         const lineType = rnd(3);
+        const lineCells: [number, number][] = [];
         if (lineType === 0) {
             const j = rnd(w);
             for (let i = 0; i < w; i++) {
                 const c = state.cells.get(i, j);
-                if (c !== undefined && c.change === null) c.change = new Burst();
+                if (c !== undefined && c.change === null) lineCells.push([i, j]);
             }
         } else if (lineType === 1) {
             const k = rnd(w) - (state.size - 1);
             for (let i = 0; i < w; i++) {
                 const j = i + k;
                 const c = state.cells.get(i, j);
-                if (c !== undefined && c.change === null) c.change = new Burst();
+                if (c !== undefined && c.change === null) lineCells.push([i, j]);
             }
         } else {
             const k = rnd(2 * w - 1);
             for (let i = 0; i < w; i++) {
                 const j = k - i;
                 const c = state.cells.get(i, j);
-                if (c !== undefined && c.change === null) c.change = new Burst();
+                if (c !== undefined && c.change === null) lineCells.push([i, j]);
             }
         }
+        let stagger = 0;
+        for (const [ci, cj] of lineCells) {
+            spawnParticle(state, src, { kind: 'cell', i: ci, j: cj }, stagger, PALETTE[2], { kind: 'burst-cell', i: ci, j: cj });
+            stagger += 60;
+        }
     } else if (color === 3) {
-        // Cyan: burst 3 random gem stones; plant gems on 3 random non-gem stones
         const gemCoords: [number, number][] = [];
         const nonGemCells: Cell[] = [];
         state.cells.each((i, j, c) => {
@@ -341,36 +405,40 @@ function applyColorEffect(state: World, color: number): void {
             }
         });
         shuffle(gemCoords);
-        for (let k = 0; k < Math.min(3, gemCoords.length); k++) {
-            const [gi, gj] = gemCoords[k];
-            const c = state.cells.get(gi, gj);
-            if (c !== undefined && c.change === null) c.change = new Burst();
-        }
         shuffle(nonGemCells);
         for (let k = 0; k < Math.min(3, nonGemCells.length); k++) {
             nonGemCells[k].hasGem = true;
         }
+        let stagger = 0;
+        for (let k = 0; k < Math.min(3, gemCoords.length); k++) {
+            const [gi, gj] = gemCoords[k];
+            spawnParticle(state, src, { kind: 'cell', i: gi, j: gj }, stagger, PALETTE[3], { kind: 'burst-cell', i: gi, j: gj });
+            stagger += 80;
+        }
     } else if (color === 4) {
-        // Orange: add 5 seconds to the timer
-        state.timerValue = Math.min(state.timerValue + 5000, state.timerMax);
+        spawnParticle(state, src, { kind: 'ui', name: 'timer-bar' }, 0, PALETTE[4], { kind: 'add-time', ms: 5000 });
     } else if (color === 5) {
-        // Purple: add random powerups to 2 random stones
-        const candidates: Cell[] = [];
-        state.cells.each((_i, _j, c) => { if (c.change === null && c.powerup === null) candidates.push(c); });
+        const candidates: [number, number][] = [];
+        state.cells.each((i, j, c) => { if (c.change === null && c.powerup === null) candidates.push([i, j]); });
         shuffle(candidates);
         const powerupTypes: Array<'bomb' | 'clock' | 'asterisk'> = ['bomb', 'clock', 'asterisk'];
+        let stagger = 0;
         for (let k = 0; k < Math.min(2, candidates.length); k++) {
-            candidates[k].powerup = powerupTypes[rnd(3)];
+            const [pi, pj] = candidates[k];
+            spawnParticle(state, src, { kind: 'cell', i: pi, j: pj }, stagger, PALETTE[5], { kind: 'assign-powerup', i: pi, j: pj, powerup: powerupTypes[rnd(3)] });
+            stagger += 100;
         }
     } else if (color === 6) {
-        // Grey: recolor 20% of all stable stones to a random color
         const targetColor = rnd(state.numColors);
-        const allStable: Cell[] = [];
-        state.cells.each((_i, _j, c) => { if (c.change === null) allStable.push(c); });
+        const allStable: [number, number][] = [];
+        state.cells.each((i, j, c) => { if (c.change === null) allStable.push([i, j]); });
         shuffle(allStable);
-        const count = Math.ceil(allStable.length * 0.2);
-        for (let k = 0; k < count; k++) {
-            allStable[k].color = targetColor;
+        const count = Math.max(1, Math.floor(allStable.length * 0.2));
+        let stagger = 0;
+        for (let k = 0; k < Math.min(count, allStable.length); k++) {
+            const [ci, cj] = allStable[k];
+            spawnParticle(state, src, { kind: 'cell', i: ci, j: cj }, stagger, PALETTE[6], { kind: 'recolor', i: ci, j: cj, color: targetColor });
+            stagger += 40;
         }
     }
 }
@@ -381,6 +449,23 @@ function update(delta: number, state: World) {
         state.pendingColorEffect = null;
     }
 
+    const completedPayloads: ParticlePayload[] = [];
+    for (let k = state.particles.length - 1; k >= 0; k--) {
+        const p = state.particles[k];
+        if (p.delay > 0) {
+            p.delay = Math.max(0, p.delay - delta);
+        } else {
+            p.t = Math.min(1, p.t + delta / p.duration);
+            if (p.t >= 1) {
+                completedPayloads.push(p.payload);
+                state.particles.splice(k, 1);
+            }
+        }
+    }
+    for (const payload of completedPayloads) {
+        firePayload(state, payload);
+    }
+
     const runs = state.gameOver ? [] : collectRuns(state.cells);
     const groups = mergeRuns(runs);
     if (groups.length > 0 && !state.timerActive) state.timerActive = true;
@@ -389,34 +474,40 @@ function update(delta: number, state: World) {
         const totalMultiplier = state.baseScoreMultiplier
             * (1 + state.multiplierBarLevel * state.multiplierLevelBonus)
             * (state.doubleScoreTimer > 0 ? 2 : 1);
-        state.score += state.baseMatchScore * Math.pow(state.scorePerExtraStone, count - 3) * totalMultiplier;
+        const scoreDelta = state.baseMatchScore * Math.pow(state.scorePerExtraStone, count - 3) * totalMultiplier;
+        state.score += scoreDelta;
         state.multiplierBarPoints += state.multiplierBarPerStone * count + state.multiplierBarPerExtraStone * Math.max(0, count - 3);
         while (state.multiplierBarPoints >= state.multiplierBarMax) {
             state.multiplierBarPoints -= state.multiplierBarMax;
             state.multiplierBarLevel++;
         }
         state.multiplierDrainDelay = state.multiplierDrainDelayMs;
+
+        const gemCells: Array<[number, number, number]> = [];
+        state.cells.each((ci, cj, c) => {
+            if (group.has(c) && c.hasGem && c.change === null) gemCells.push([ci, cj, c.color]);
+        });
         for (const cell of group) {
             if (cell.change == null) {
                 cell.change = new Burst();
-                if (cell.hasGem) {
-                    cell.hasGem = false;
-                    state.gemHistory.push(cell.color);
-                    state.gemsCollected++;
-                    state.gemBarCount++;
-                    if (state.gemBarCount >= state.gemsPerMultiplierLevel) {
-                        state.gemMultiplierLevel++;
-                        state.gemBarCount -= state.gemsPerMultiplierLevel;
-                        state.baseScoreMultiplier = 1 + state.gemMultiplierLevel * state.gemMultiplierBonus;
-                    }
-                }
+                if (cell.hasGem) cell.hasGem = false;
             }
+        }
+        for (const [ci, cj, gc] of gemCells) {
+            state.gemHistory.push(gc);
+            spawnParticle(state, { kind: 'cell', i: ci, j: cj }, { kind: 'ui', name: 'gem-bar' }, 0, '#2eb82e', { kind: 'gem-credit', i: ci, j: cj });
         }
         const contributing = runs.filter(run => run.some(c => group.has(c)));
         const maxRunLength = contributing.reduce((m, r) => Math.max(m, r.length), 0);
         if (maxRunLength >= 5) grantPowerup(state, 'clock', group);
         else if (contributing.length >= 2) grantPowerup(state, 'asterisk', group);
         else if (count >= 4) grantPowerup(state, 'bomb', group);
+
+        let sumI = 0, sumJ = 0, coordCount = 0;
+        state.cells.each((ci, cj, c) => { if (group.has(c)) { sumI += ci; sumJ += cj; coordCount++; } });
+        if (coordCount > 0) {
+            state.scorePopups.push({ i: sumI / coordCount, j: sumJ / coordCount, value: Math.floor(scoreDelta), age: 0 });
+        }
     }
 
     const powerupQueue: Array<[number, number, 'bomb' | 'clock' | 'asterisk', number]> = [];
@@ -440,17 +531,17 @@ function update(delta: number, state: World) {
                 }
             }
         } else if (ptype === 'clock') {
-            state.timerValue = Math.min(state.timerValue + state.clockPowerupTime, state.timerMax);
+            spawnParticle(state, { kind: 'cell', i: pi, j: pj }, { kind: 'ui', name: 'timer-bar' }, 0, '#f76f03', { kind: 'add-time', ms: state.clockPowerupTime });
         } else if (ptype === 'asterisk') {
+            const targets: [number, number][] = [];
             state.cells.each((ai, aj, c) => {
-                if (c.change === null && c.color === pcolor) {
-                    c.change = new Burst();
-                    if (c.powerup !== null) {
-                        powerupQueue.push([ai, aj, c.powerup, c.color]);
-                        c.powerup = null;
-                    }
-                }
+                if (c.change === null && c.color === pcolor) targets.push([ai, aj]);
             });
+            let stagger = 0;
+            for (const [ai, aj] of targets) {
+                spawnParticle(state, { kind: 'cell', i: pi, j: pj }, { kind: 'cell', i: ai, j: aj }, stagger, PALETTE[pcolor], { kind: 'burst-cell', i: ai, j: aj });
+                stagger += 50;
+            }
         }
     }
 
@@ -479,7 +570,7 @@ function update(delta: number, state: World) {
                 cell.change.phase += delta / burstDuration;
                 if (cell.change.phase > 1) cell.change.phase = 1;
             }
-            else {
+            else if (state.particles.length === 0) {
                 let tgt = j;
                 let drop = 1;
                 let n = 0;
@@ -578,6 +669,8 @@ function update(delta: number, state: World) {
             }
         }
 
+        if (state.doubleScoreTimer > 0) state.doubleScoreTimer = Math.max(0, state.doubleScoreTimer - delta);
+
         state.colorBiasTimer -= delta;
         if (state.colorBiasTimer <= 0) {
             if (!state.colorBiasActive) {
@@ -590,6 +683,11 @@ function update(delta: number, state: World) {
             }
         }
 
+    }
+
+    for (let k = state.scorePopups.length - 1; k >= 0; k--) {
+        state.scorePopups[k].age += delta;
+        if (state.scorePopups[k].age >= state.scorePopupDuration) state.scorePopups.splice(k, 1);
     }
 
     return state;
