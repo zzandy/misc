@@ -11,7 +11,10 @@ export type Cell = {
 export type World = {
     size: number,
     numColors: number,
-    cells: HexStore<Cell>
+    cells: HexStore<Cell>,
+    dragStart: [number, number] | null,
+    dragDir: [number, number] | null,
+    activatedColor: number | null
 };
 
 export interface IChange {

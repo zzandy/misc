@@ -1,11 +1,13 @@
 import { fullscreenCanvas } from '../../lib/canvas';
-import { World, Burst, Fall } from './world';
+import { World, Cell, Burst, Fall } from './world';
 import { Vector, AABB } from './geometry';
 import { tau } from './util';
 
 const colors = ['#fed203', '#d6050d', '#1337b2', '#079ecd', '#f76f03', '#8e0c70', '#cbcbcb'];
 
 const sq32 = Math.sqrt(3) / 2;
+
+const hexDirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]];
 
 export class HexScaler {
     public readonly area: AABB;
@@ -63,6 +65,7 @@ export class ScreenManager {
     private readonly scaler: HexScaler;
     private active: [number, number] | null = null;
     private readonly clipPath: Path2D;
+    private world: World | null = null;
 
     constructor(size: number) {
         let canvas = this.ctx.canvas;
@@ -109,18 +112,113 @@ export class ScreenManager {
         canvas.addEventListener('mouseup', (e) => this.onUp(e));
     }
 
-    private onMove(e: MouseEvent): any {
+    private onMove(e: MouseEvent): void {
         this.pos = new Vector(e.clientX, e.clientY);
         this.active = this.scaler.screenToStore(this.pos);
+
+        if (this.world == null || this.world.dragStart == null) return;
+
+        const [si, sj] = this.world.dragStart;
+        const startScreen = this.scaler.storeToScreen(si, sj);
+        const dx = this.pos.x - startScreen.x;
+        const dy = this.pos.y - startScreen.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < this.scaler.r * 0.5) {
+            this.world.dragDir = null;
+            return;
+        }
+
+        let bestDir: [number, number] = hexDirs[0];
+        let bestDot = -Infinity;
+
+        for (const [di, dj] of hexDirs) {
+            const vx = 2 * sq32 * di;
+            const vy = 2 * dj - di;
+            const len = Math.sqrt(vx * vx + vy * vy);
+            const dot = (dx * vx + dy * vy) / len;
+            if (dot > bestDot) {
+                bestDot = dot;
+                bestDir = [di, dj];
+            }
+        }
+
+        this.world.dragDir = bestDir;
     }
 
-    private onDown(e: MouseEvent): any {
+    private onDown(e: MouseEvent): void {
+        if (this.world == null) return;
+        const pos = new Vector(e.clientX, e.clientY);
+        const coord = this.scaler.screenToStore(pos);
+        if (coord == null) return;
+        const [ci, cj] = coord;
+        const cell = this.world.cells.get(ci, cj);
+        if (cell == null || cell.change != null) return;
+        this.world.dragStart = [ci, cj];
+        this.world.dragDir = null;
     }
 
-    private onUp(e: MouseEvent): any {
+    private onUp(_e: MouseEvent): void {
+        if (this.world == null) return;
+
+        if (this.world.dragStart != null && this.world.dragDir != null) {
+            const [si, sj] = this.world.dragStart;
+            const [di, dj] = this.world.dragDir;
+            const ti = si + di;
+            const tj = sj + dj;
+            const src = this.world.cells.get(si, sj);
+            const tgt = this.world.cells.get(ti, tj);
+
+            if (src != null && src.change == null && tgt != null && tgt.change == null
+                && this.hasMatchAfterSwap(si, sj, ti, tj)) {
+                const origColor = src.color;
+                src.color = tgt.color;
+                tgt.color = origColor;
+                this.world.activatedColor = origColor;
+            }
+        }
+
+        this.world.dragStart = null;
+        this.world.dragDir = null;
+    }
+
+    private hasMatchAfterSwap(i1: number, j1: number, i2: number, j2: number): boolean {
+        if (this.world == null) return false;
+        const cells = this.world.cells;
+        const c1 = cells.get(i1, j1);
+        const c2 = cells.get(i2, j2);
+        if (c1 == null || c2 == null) return false;
+
+        const origColor1 = c1.color;
+        const origColor2 = c2.color;
+        c1.color = origColor2;
+        c2.color = origColor1;
+
+        let found = false;
+        const check = (agg: Cell[], cell: Cell, _i: number, _j: number): Cell[] => {
+            if (cell.change != null) return [];
+            if (agg.length === 0) return [cell];
+            if (agg[0].color === cell.color) {
+                agg.push(cell);
+                if (agg.length >= 3) found = true;
+                return agg;
+            }
+            return [cell];
+        };
+
+        cells.reduceRows(() => [], check);
+        if (!found) cells.reduceCols(() => [], check);
+        if (!found) cells.reduceDiags(() => [], check);
+
+        c1.color = origColor1;
+        c2.color = origColor2;
+
+        return found;
     }
 
     public render(delta: number, world: World) {
+        this.world = world;
+
         const ctx = this.ctx;
         const { width, height } = ctx.canvas;
         const r0 = this.scaler.r;
@@ -130,19 +228,18 @@ export class ScreenManager {
         ctx.fillRect(0, 0, width, height);
         ctx.save();
 
-        let a = r0;
-
         ctx.clip(this.clipPath);
 
         world.cells.each((i, j, cell) => {
-            const color = cell.color
+            const isDragSource = world.dragStart != null && world.dragDir != null
+                && i === world.dragStart[0] && j === world.dragStart[1];
 
             ctx.save();
             ctx.strokeStyle = 'white';
-            ctx.fillStyle = colors[color];
+            ctx.fillStyle = colors[cell.color];
 
             const pos = this.scaler.storeToScreen(i, j);
-            ctx.translate(pos.x, pos.y);r
+            ctx.translate(pos.x, pos.y);
 
             if (cell.change instanceof Burst) {
                 const s = fade(Math.min(1, 1 - cell.change.phase));
@@ -151,21 +248,44 @@ export class ScreenManager {
             else if (cell.change instanceof Fall) {
                 const c = cell.change;
                 const dy = c.dropHeight * fade((c.dropHeight - c.phase) / c.dropHeight);
-
                 ctx.translate(0, -dy * r0 * 2);
             }
 
-            if (this.active != null && this.active[0] == i && this.active[1] == j)
+            if (isDragSource) {
+                ctx.globalAlpha = 0.35;
                 ctx.strokeCircle(0, 0, r);
-
-            ctx.fillCircle(0, 0, r);
-
-            ctx.fillStyle = 'black'
-            const text = i + ' ' + j
-            ctx.fillText(text, 0 - ctx.measureText(text).width / 2, 4);
+                ctx.globalAlpha = 1;
+            } else {
+                if (this.active != null && this.active[0] == i && this.active[1] == j)
+                    ctx.strokeCircle(0, 0, r);
+                ctx.fillCircle(0, 0, r);
+                ctx.fillStyle = 'black';
+                const text = i + ' ' + j;
+                ctx.fillText(text, 0 - ctx.measureText(text).width / 2, 4);
+            }
 
             ctx.restore();
         });
+
+        if (world.dragStart != null && world.dragDir != null) {
+            const [si, sj] = world.dragStart;
+            const [di, dj] = world.dragDir;
+            const cell = world.cells.get(si, sj);
+            if (cell != null) {
+                const startPos = this.scaler.storeToScreen(si, sj);
+                const targetPos = this.scaler.storeToScreen(si + di, sj + dj);
+                const fx = startPos.x + (targetPos.x - startPos.x) * 0.5;
+                const fy = startPos.y + (targetPos.y - startPos.y) * 0.5;
+
+                ctx.save();
+                ctx.translate(fx, fy);
+                ctx.globalAlpha = 0.75;
+                ctx.fillStyle = colors[cell.color];
+                ctx.fillCircle(0, 0, r);
+                ctx.globalAlpha = 1;
+                ctx.restore();
+            }
+        }
 
         ctx.restore();
     }

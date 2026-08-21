@@ -56,6 +56,7 @@ export class HexStore<TCell> {
 
     public reduceDiags<T>(init: () => T, callback: ItemStringCallback<T, TCell>): void {
         let agg = init();
+        let agg2 = init();
 
         for (let i = 0; i < this.w; ++i)
             if (this.cells[i][i] != undefined)
@@ -64,7 +65,7 @@ export class HexStore<TCell> {
 
         for (let i = 1; i < this.size; ++i) {
             agg = init();
-            let agg2 = init();
+            agg2 = init();
 
             for (var j = 0, k = i; j < this.w; ++j, ++k) {
 
@@ -72,7 +73,7 @@ export class HexStore<TCell> {
                     agg = callback(agg, this.cells[k][j], k, j);
 
                 if (this.cells[j][k] !== undefined)
-                    agg2 = callback(agg2, this.cells[j][k], k, i);
+                    agg2 = callback(agg2, this.cells[j][k], j, k);
             }
         }
     }

@@ -22,10 +22,13 @@ function init(): World {
         change: null
     }));
 
-    const world = {
+    const world: World = {
         size,
         numColors,
         cells,
+        dragStart: null,
+        dragDir: null,
+        activatedColor: null
     };
 
     window.addEventListener('keydown', e => {
@@ -100,7 +103,7 @@ function update(delta: number, state: World) {
 
                     if (next === undefined) {
                         prev.change = new Fall(drop);
-                        prev.color = rnd(7);
+                        prev.color = rnd(state.numColors);
                         --tgt;
                     }
                     else if (next.change == null) {
