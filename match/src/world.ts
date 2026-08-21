@@ -42,7 +42,11 @@ export type World = {
     multiplierDrainRate: number,
     multiplierDrainDelayMs: number,
     multiplierLevelBonus: number,
-    multiplierDrainRateMultiplier: number
+    multiplierDrainRateMultiplier: number,
+    timerActive: boolean,
+    timerValue: number,
+    timerMax: number,
+    gameOver: boolean
 };
 
 export interface IChange {

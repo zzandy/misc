@@ -63,13 +63,17 @@ export class ScreenManager {
     private readonly ctx = fullscreenCanvas();
     private pos: Vector = new Vector(0, 0);
     private readonly scaler: HexScaler;
+    private readonly size: number;
     private active: [number, number] | null = null;
     private readonly clipPath: Path2D;
     private world: World | null = null;
     private multiplierBarDisplay = 0;
     private multiplierBarLevel = 0;
+    public onPlayAgain: (() => void) | null = null;
+    private playAgainRect: AABB | null = null;
 
     constructor(size: number) {
+        this.size = size;
         let canvas = this.ctx.canvas;
         let { width, height } = canvas;
 
@@ -150,6 +154,15 @@ export class ScreenManager {
 
     private onDown(e: MouseEvent): void {
         if (this.world == null) return;
+        if (this.world.gameOver) {
+            if (this.playAgainRect != null && this.onPlayAgain != null) {
+                const pos = new Vector(e.clientX, e.clientY);
+                if (this.playAgainRect.contains(pos)) {
+                    this.onPlayAgain();
+                }
+            }
+            return;
+        }
         const pos = new Vector(e.clientX, e.clientY);
         const coord = this.scaler.screenToStore(pos);
         if (coord == null) return;
@@ -162,6 +175,7 @@ export class ScreenManager {
 
     private onUp(_e: MouseEvent): void {
         if (this.world == null) return;
+        if (this.world.gameOver) return;
 
         if (this.world.dragStart != null && this.world.dragDir != null) {
             const [si, sj] = this.world.dragStart;
@@ -315,25 +329,36 @@ export class ScreenManager {
             this.multiplierBarDisplay += (targetFill - this.multiplierBarDisplay) * Math.min(1, delta * 0.008);
         }
 
-        // Bar along top-right edge: starts at top vertex (area center-x, area.y), runs at 30° for half field width
-        const barLength = area.w / 2;
-        const barThick = 16;
-        const topVx = area.x + area.w / 2;
-        const topVy = area.y;
+        // Multiplier bar: along the top-right diagonal edge, from stone (size-1,0) to stone (2*size-2, size-1)
+        {
+            const barThick = 12;
+            const barGap = 6;
+            const edgeStart = this.scaler.storeToScreen(this.size - 1, 0);
+            const edgeEnd = this.scaler.storeToScreen(2 * this.size - 2, this.size - 1);
+            const edgeDx = edgeEnd.x - edgeStart.x;
+            const edgeDy = edgeEnd.y - edgeStart.y;
+            const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
+            const edgeAngle = Math.atan2(edgeDy, edgeDx);
+            // Outward perpendicular: clockwise 90° from edge direction
+            const perpX = edgeDy / edgeLen;
+            const perpY = -edgeDx / edgeLen;
+            const ox = perpX * (r0 + barGap + barThick / 2);
+            const oy = perpY * (r0 + barGap + barThick / 2);
 
-        ctx.save();
-        ctx.translate(topVx, topVy);
-        ctx.rotate(Math.PI / 6);
-        ctx.fillStyle = '#332200';
-        ctx.fillRect(0, -(barThick + 3), barLength, barThick);
-        ctx.fillStyle = '#e8c000';
-        ctx.fillRect(0, -(barThick + 3), barLength * this.multiplierBarDisplay, barThick);
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-        ctx.font = 'bold 11px sans-serif';
-        ctx.fillText('×' + (world.multiplierBarLevel + 1), 4, -(barThick / 2 + 3));
-        ctx.restore();
+            ctx.save();
+            ctx.translate(edgeStart.x + ox, edgeStart.y + oy);
+            ctx.rotate(edgeAngle);
+            ctx.fillStyle = '#332200';
+            ctx.fillRect(0, -barThick / 2, edgeLen, barThick);
+            ctx.fillStyle = '#e8c000';
+            ctx.fillRect(0, -barThick / 2, edgeLen * this.multiplierBarDisplay, barThick);
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.font = 'bold 11px sans-serif';
+            ctx.fillText('×' + (world.multiplierBarLevel + 1), 4, 0);
+            ctx.restore();
+        }
 
         // Score: top-right corner of bounding box — right edge x, top edge y
         ctx.save();
@@ -343,6 +368,78 @@ export class ScreenManager {
         ctx.fillStyle = world.doubleScoreTimer > 0 ? '#ffd700' : 'white';
         ctx.fillText(Math.floor(world.score).toString(), area.x + area.w, area.y);
         ctx.restore();
+
+        // Timer bar: vertical bar left of the hex field, aligned with top/bottom stone centers in column 0
+        {
+            const timerBarW = 12;
+            const timerGap = 6;
+            const topStone = this.scaler.storeToScreen(0, 0);
+            const botStone = this.scaler.storeToScreen(0, this.size - 1);
+            const timerBarX = topStone.x - r0 - timerGap - timerBarW;
+            const timerBarTop = topStone.y;
+            const timerBarH = botStone.y - topStone.y;
+            const timerFill = world.timerMax > 0 ? world.timerValue / world.timerMax : 0;
+            ctx.save();
+            ctx.fillStyle = '#1a0800';
+            ctx.fillRect(timerBarX, timerBarTop, timerBarW, timerBarH);
+            ctx.fillStyle = '#f76f03';
+            ctx.fillRect(timerBarX, timerBarTop + timerBarH * (1 - timerFill), timerBarW, timerBarH * timerFill);
+            ctx.restore();
+        }
+
+        // Game-over overlay
+        if (world.gameOver) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+            ctx.fillRect(area.x, area.y, area.w, area.h);
+
+            const cx = area.x + area.w / 2;
+            let cy = area.y + area.h * 0.18;
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            ctx.fillStyle = '#f76f03';
+            ctx.font = 'bold 52px sans-serif';
+            ctx.fillText('GAME OVER', cx, cy);
+            cy += 64;
+
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 30px sans-serif';
+            ctx.fillText('Score: ' + Math.floor(world.score), cx, cy);
+            cy += 46;
+
+            const raw = localStorage.getItem('match-scores');
+            const scores: number[] = raw ? JSON.parse(raw) : [];
+            ctx.font = 'bold 16px sans-serif';
+            ctx.fillStyle = '#cccccc';
+            ctx.fillText('Top Scores', cx, cy);
+            cy += 26;
+            ctx.font = '15px sans-serif';
+            for (let k = 0; k < scores.length; k++) {
+                const isCurrentGame = k === 0;
+                ctx.fillStyle = isCurrentGame ? '#f76f03' : 'white';
+                ctx.fillText((k + 1) + '.  ' + scores[k], cx, cy);
+                cy += 20;
+            }
+            cy += 12;
+
+            const btnW = 160;
+            const btnH = 44;
+            const btnX = cx - btnW / 2;
+            const btnY = cy;
+            this.playAgainRect = new AABB(btnX, btnY, btnW, btnH);
+
+            ctx.fillStyle = '#f76f03';
+            ctx.fillRect(btnX, btnY, btnW, btnH);
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillText('Play Again', cx, btnY + btnH / 2);
+
+            ctx.restore();
+        } else {
+            this.playAgainRect = null;
+        }
     }
 }
 

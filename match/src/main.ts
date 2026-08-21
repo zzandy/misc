@@ -7,7 +7,10 @@ import { HexStore } from './store';
 
 const size = 5;
 
+let currentWorld: World | null = null;
+
 const renderer = new ScreenManager(size);
+renderer.onPlayAgain = () => { if (currentWorld != null) resetWorld(currentWorld); };
 
 const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1]];
 
@@ -160,6 +163,39 @@ function randomStoneColor(world: World): number {
     return pool[rnd(pool.length)];
 }
 
+function saveScoreToLocalStorage(score: number): void {
+    const key = 'match-scores';
+    const raw = localStorage.getItem(key);
+    const scores: number[] = raw ? JSON.parse(raw) : [];
+    scores.unshift(Math.floor(score));
+    if (scores.length > 10) scores.length = 10;
+    localStorage.setItem(key, JSON.stringify(scores));
+}
+
+function resetWorld(w: World): void {
+    w.dragStart = null;
+    w.dragDir = null;
+    w.activatedColor = null;
+    w.shufflePending = false;
+    w.shuffleCheckTimer = 0;
+    w.wiggleCell = null;
+    w.wiggleTimer = 0;
+    w.colorBiasActive = false;
+    w.colorBiasColor = 0;
+    w.colorBiasTimer = w.colorBiasFairDuration;
+    w.score = 0;
+    w.baseScoreMultiplier = 1;
+    w.multiplierBarPoints = 0;
+    w.multiplierBarLevel = 0;
+    w.multiplierDrainActive = false;
+    w.multiplierDrainDelay = 0;
+    w.doubleScoreTimer = 0;
+    w.timerActive = false;
+    w.timerValue = w.timerMax;
+    w.gameOver = false;
+    w.cells = new HexStore<Cell>(w.size, () => ({ color: randomStoneColor(w), change: null }));
+}
+
 const loop = new Loop(1000 / 60, init, update, (delta, world) => renderer.render(delta, world));
 loop.start();
 
@@ -200,7 +236,11 @@ function init(): World {
         multiplierDrainRate: 50,
         multiplierDrainDelayMs: 500,
         multiplierLevelBonus: 1.5,
-        multiplierDrainRateMultiplier: 0.3
+        multiplierDrainRateMultiplier: 0.3,
+        timerActive: false,
+        timerValue: 60000,
+        timerMax: 60000,
+        gameOver: false
     };
 
     world.cells = new HexStore<Cell>(size, () => ({
@@ -217,12 +257,14 @@ function init(): World {
         }
     });
 
+    currentWorld = world;
     return world;
 }
 
 function update(delta: number, state: World) {
     // Collect all match groups and mark as Burst
-    const groups = mergeRuns(collectRuns(state.cells));
+    const groups = state.gameOver ? [] : mergeRuns(collectRuns(state.cells));
+    if (groups.length > 0 && !state.timerActive) state.timerActive = true;
     for (const group of groups) {
         const count = group.size;
         const totalMultiplier = state.baseScoreMultiplier
@@ -238,6 +280,16 @@ function update(delta: number, state: World) {
         for (const cell of group) {
             if (cell.change == null) cell.change = new Burst();
         }
+    }
+
+    if (state.timerActive && !state.gameOver) {
+        state.timerValue -= delta;
+        if (state.timerValue <= 0) {
+            state.timerValue = 0;
+            state.gameOver = true;
+            saveScoreToLocalStorage(state.score);
+        }
+        state.timerValue = Math.min(state.timerValue, state.timerMax);
     }
 
     const burstDuration = 120;
@@ -300,62 +352,64 @@ function update(delta: number, state: World) {
     let anyActive = false;
     state.cells.each((_i, _j, cell) => { if (cell.change !== null) anyActive = true; });
 
-    // Wiggle countdown
-    if (state.wiggleTimer > 0) {
-        state.wiggleTimer -= delta;
-        if (state.wiggleTimer <= 0) {
-            state.wiggleTimer = 0;
-            state.wiggleCell = null;
+    if (!state.gameOver) {
+        // Wiggle countdown
+        if (state.wiggleTimer > 0) {
+            state.wiggleTimer -= delta;
+            if (state.wiggleTimer <= 0) {
+                state.wiggleTimer = 0;
+                state.wiggleCell = null;
+            }
         }
-    }
 
-    if (anyActive) {
-        state.shuffleCheckTimer = 0;
-        state.wiggleCell = null;
-        state.wiggleTimer = 0;
-    } else {
-        if (state.shuffleCheckTimer <= 0) {
-            state.shuffleCheckTimer = state.shuffleCheckDelay;
+        if (anyActive) {
+            state.shuffleCheckTimer = 0;
+            state.wiggleCell = null;
+            state.wiggleTimer = 0;
         } else {
-            state.shuffleCheckTimer -= delta;
             if (state.shuffleCheckTimer <= 0) {
-                const wiggle = findWiggleCell(state.cells, state.size);
-                if (wiggle === null) {
-                    shuffleBoard(state.cells, state.size);
-                    state.shuffleCheckTimer = 0;
-                } else {
-                    state.wiggleCell = wiggle;
-                    state.wiggleTimer = state.wiggleDuration;
-                    state.shuffleCheckTimer = state.wiggleHintInterval;
+                state.shuffleCheckTimer = state.shuffleCheckDelay;
+            } else {
+                state.shuffleCheckTimer -= delta;
+                if (state.shuffleCheckTimer <= 0) {
+                    const wiggle = findWiggleCell(state.cells, state.size);
+                    if (wiggle === null) {
+                        shuffleBoard(state.cells, state.size);
+                        state.shuffleCheckTimer = 0;
+                    } else {
+                        state.wiggleCell = wiggle;
+                        state.wiggleTimer = state.wiggleDuration;
+                        state.shuffleCheckTimer = state.wiggleHintInterval;
+                    }
                 }
             }
         }
-    }
 
-    if (state.multiplierDrainDelay > 0) {
-        state.multiplierDrainDelay -= delta;
-    } else {
-        state.multiplierBarPoints -= state.multiplierDrainRate * (1 + state.multiplierBarLevel * state.multiplierDrainRateMultiplier) * delta / 1000;
-        while (state.multiplierBarPoints < 0) {
-            if (state.multiplierBarLevel > 0) {
-                state.multiplierBarLevel--;
-                state.multiplierBarPoints += state.multiplierBarMax;
-            } else {
-                state.multiplierBarPoints = 0;
-                break;
+        if (state.multiplierDrainDelay > 0) {
+            state.multiplierDrainDelay -= delta;
+        } else {
+            state.multiplierBarPoints -= state.multiplierDrainRate * (1 + state.multiplierBarLevel * state.multiplierDrainRateMultiplier) * delta / 1000;
+            while (state.multiplierBarPoints < 0) {
+                if (state.multiplierBarLevel > 0) {
+                    state.multiplierBarLevel--;
+                    state.multiplierBarPoints += state.multiplierBarMax;
+                } else {
+                    state.multiplierBarPoints = 0;
+                    break;
+                }
             }
         }
-    }
 
-    state.colorBiasTimer -= delta;
-    if (state.colorBiasTimer <= 0) {
-        if (!state.colorBiasActive) {
-            state.colorBiasActive = true;
-            state.colorBiasColor = rnd(state.numColors);
-            state.colorBiasTimer = state.colorBiasBiasedDuration;
-        } else {
-            state.colorBiasActive = false;
-            state.colorBiasTimer = state.colorBiasFairDuration;
+        state.colorBiasTimer -= delta;
+        if (state.colorBiasTimer <= 0) {
+            if (!state.colorBiasActive) {
+                state.colorBiasActive = true;
+                state.colorBiasColor = rnd(state.numColors);
+                state.colorBiasTimer = state.colorBiasBiasedDuration;
+            } else {
+                state.colorBiasActive = false;
+                state.colorBiasTimer = state.colorBiasFairDuration;
+            }
         }
     }
 
