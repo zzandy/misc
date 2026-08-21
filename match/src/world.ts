@@ -26,7 +26,23 @@ export type World = {
     colorBiasActive: boolean,
     colorBiasColor: number,
     colorBiasFairDuration: number,
-    colorBiasBiasedDuration: number
+    colorBiasBiasedDuration: number,
+    score: number,
+    baseScoreMultiplier: number,
+    multiplierBarPoints: number,
+    multiplierBarLevel: number,
+    multiplierDrainActive: boolean,
+    multiplierDrainDelay: number,
+    doubleScoreTimer: number,
+    baseMatchScore: number,
+    scorePerExtraStone: number,
+    multiplierBarMax: number,
+    multiplierBarPerStone: number,
+    multiplierBarPerExtraStone: number,
+    multiplierDrainRate: number,
+    multiplierDrainDelayMs: number,
+    multiplierLevelBonus: number,
+    multiplierDrainRateMultiplier: number
 };
 
 export interface IChange {

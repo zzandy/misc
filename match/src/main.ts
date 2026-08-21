@@ -5,7 +5,7 @@ import { rnd } from '../../lib/util';
 import { Vector } from './geometry';
 import { HexStore } from './store';
 
-const size = 4;
+const size = 5;
 
 const renderer = new ScreenManager(size);
 
@@ -184,7 +184,23 @@ function init(): World {
         colorBiasBiasedDuration: 6000,
         colorBiasTimer: 12000,
         colorBiasActive: false,
-        colorBiasColor: 0
+        colorBiasColor: 0,
+        score: 0,
+        baseScoreMultiplier: 1,
+        multiplierBarPoints: 0,
+        multiplierBarLevel: 0,
+        multiplierDrainActive: false,
+        multiplierDrainDelay: 0,
+        doubleScoreTimer: 0,
+        baseMatchScore: 100,
+        scorePerExtraStone: 1.6,
+        multiplierBarMax: 1000,
+        multiplierBarPerStone: 50,
+        multiplierBarPerExtraStone: 25,
+        multiplierDrainRate: 50,
+        multiplierDrainDelayMs: 500,
+        multiplierLevelBonus: 1.5,
+        multiplierDrainRateMultiplier: 0.3
     };
 
     world.cells = new HexStore<Cell>(size, () => ({
@@ -208,6 +224,17 @@ function update(delta: number, state: World) {
     // Collect all match groups and mark as Burst
     const groups = mergeRuns(collectRuns(state.cells));
     for (const group of groups) {
+        const count = group.size;
+        const totalMultiplier = state.baseScoreMultiplier
+            * (1 + state.multiplierBarLevel * state.multiplierLevelBonus)
+            * (state.doubleScoreTimer > 0 ? 2 : 1);
+        state.score += state.baseMatchScore * Math.pow(state.scorePerExtraStone, count - 3) * totalMultiplier;
+        state.multiplierBarPoints += state.multiplierBarPerStone * count + state.multiplierBarPerExtraStone * Math.max(0, count - 3);
+        while (state.multiplierBarPoints >= state.multiplierBarMax) {
+            state.multiplierBarPoints -= state.multiplierBarMax;
+            state.multiplierBarLevel++;
+        }
+        state.multiplierDrainDelay = state.multiplierDrainDelayMs;
         for (const cell of group) {
             if (cell.change == null) cell.change = new Burst();
         }
@@ -301,6 +328,21 @@ function update(delta: number, state: World) {
                     state.wiggleTimer = state.wiggleDuration;
                     state.shuffleCheckTimer = state.wiggleHintInterval;
                 }
+            }
+        }
+    }
+
+    if (state.multiplierDrainDelay > 0) {
+        state.multiplierDrainDelay -= delta;
+    } else {
+        state.multiplierBarPoints -= state.multiplierDrainRate * (1 + state.multiplierBarLevel * state.multiplierDrainRateMultiplier) * delta / 1000;
+        while (state.multiplierBarPoints < 0) {
+            if (state.multiplierBarLevel > 0) {
+                state.multiplierBarLevel--;
+                state.multiplierBarPoints += state.multiplierBarMax;
+            } else {
+                state.multiplierBarPoints = 0;
+                break;
             }
         }
     }

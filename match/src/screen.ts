@@ -66,6 +66,8 @@ export class ScreenManager {
     private active: [number, number] | null = null;
     private readonly clipPath: Path2D;
     private world: World | null = null;
+    private multiplierBarDisplay = 0;
+    private multiplierBarLevel = 0;
 
     constructor(size: number) {
         let canvas = this.ctx.canvas;
@@ -281,11 +283,15 @@ export class ScreenManager {
             if (cell != null) {
                 const startPos = this.scaler.storeToScreen(si, sj);
                 const targetPos = this.scaler.storeToScreen(si + di, sj + dj);
-                const fx = startPos.x + (targetPos.x - startPos.x) * 0.5;
-                const fy = startPos.y + (targetPos.y - startPos.y) * 0.5;
+                const ex = targetPos.x - startPos.x;
+                const ey = targetPos.y - startPos.y;
+                const len2 = ex * ex + ey * ey;
+                const px = this.pos.x - startPos.x;
+                const py = this.pos.y - startPos.y;
+                const t = len2 > 0 ? Math.max(0, Math.min(0.5, (px * ex + py * ey) / len2)) : 0;
 
                 ctx.save();
-                ctx.translate(fx, fy);
+                ctx.translate(startPos.x + ex * t, startPos.y + ey * t);
                 ctx.globalAlpha = 0.75;
                 ctx.fillStyle = colors[cell.color];
                 ctx.fillCircle(0, 0, r);
@@ -294,6 +300,48 @@ export class ScreenManager {
             }
         }
 
+        ctx.restore();
+
+        const area = this.scaler.area;
+
+        // Smooth bar fill toward actual value; snap instantly on level change
+        const targetFill = world.multiplierBarMax > 0
+            ? Math.min(1, world.multiplierBarPoints / world.multiplierBarMax)
+            : 0;
+        if (world.multiplierBarLevel !== this.multiplierBarLevel) {
+            this.multiplierBarDisplay = targetFill;
+            this.multiplierBarLevel = world.multiplierBarLevel;
+        } else {
+            this.multiplierBarDisplay += (targetFill - this.multiplierBarDisplay) * Math.min(1, delta * 0.008);
+        }
+
+        // Bar along top-right edge: starts at top vertex (area center-x, area.y), runs at 30° for half field width
+        const barLength = area.w / 2;
+        const barThick = 16;
+        const topVx = area.x + area.w / 2;
+        const topVy = area.y;
+
+        ctx.save();
+        ctx.translate(topVx, topVy);
+        ctx.rotate(Math.PI / 6);
+        ctx.fillStyle = '#332200';
+        ctx.fillRect(0, -(barThick + 3), barLength, barThick);
+        ctx.fillStyle = '#e8c000';
+        ctx.fillRect(0, -(barThick + 3), barLength * this.multiplierBarDisplay, barThick);
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.fillText('×' + (world.multiplierBarLevel + 1), 4, -(barThick / 2 + 3));
+        ctx.restore();
+
+        // Score: top-right corner of bounding box — right edge x, top edge y
+        ctx.save();
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'top';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.fillStyle = world.doubleScoreTimer > 0 ? '#ffd700' : 'white';
+        ctx.fillText(Math.floor(world.score).toString(), area.x + area.w, area.y);
         ctx.restore();
     }
 }
