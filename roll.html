@@ -32,6 +32,14 @@
 
         let soundOn = true;
 
+        const dingAudio = new Audio('ding.mp3');
+
+        function playDing() {
+            if (!soundOn) return;
+            const s = dingAudio.cloneNode();
+            s.play().catch(() => { });
+        }
+
         const IDLE = Symbol('IDLE');
         const ROLLING = Symbol('ROLLING');
 
@@ -80,6 +88,12 @@
 
         const [ox, oy] = [ctx.canvas.width / 2, ctx.canvas.height / 2];
 
+        let currentZoom = 1;
+        let defaultZoom = 1;
+        defaultZoom = Math.min(ctx.canvas.width, ctx.canvas.height) / (7 * gridStep);
+        currentZoom = defaultZoom;
+        let cameraX = 0, cameraY = 0;
+
         ctx.fillRounded = (x, y, w, h, r) => {
             ctx.beginPath();
             ctx.moveTo(r, 0,);
@@ -106,6 +120,8 @@
         const ENABLE_EDGE_BONUS = Symbol('enable edge bonus');
         const ENABLE_AUTOROLL = Symbol('enable auto roll');
         const ENABLE_MEGADIE = Symbol('enable megadie');
+        const ENABLE_DOUBLEDIE = Symbol('enable doubledie');
+        const ENABLE_ECHOROLL = Symbol('enable echo roll');
 
         let action = null;
         const actions = []
@@ -118,6 +134,7 @@
 
         let toggle = false;
         const cells = [];
+        const cellIndex = new Map();
         class Cell {
             constructor(pos, size, dir) {
                 this.pos = pos;
@@ -128,37 +145,28 @@
 
                 this.neighbors = [null, null, null, null];
 
-                cells.push(this)
+                cells.push(this);
+                cellIndex.set(`${pos.x},${pos.y}`, this);
             }
 
-            link(dir, neighbor, short) {
-
+            link(dir, neighbor) {
                 const d3 = (dir + 2) % (LEFT + 1);
                 this.neighbors[dir] = neighbor;
                 neighbor.neighbors[d3] = this;
 
-                this.dist = Math.min(this.dist == 0 ? Infinity : this.dist, neighbor.dist + 1)
+                this.dist = Math.min(this.dist == 0 ? Infinity : this.dist, neighbor.dist + 1);
 
-                if (short) return;
-
-                const d1 = (dir + 1) % (LEFT + 1);
-                const d2 = (dir + 3) % (LEFT + 1);
-
-                const sideA = neighbor.neighbors[d1]?.neighbors[d3];
-                const sideB = neighbor.neighbors[d2]?.neighbors[d3];
-
-                if (sideA) {
-                    this.link(d1, sideA, true);
-
-                    const head = sideA.neighbors[d3]?.neighbors[d2];
-                    if (head) this.link(d3, head, true)
-                }
-
-                if (sideB) {
-                    this.link(d2, sideB, true);
-
-                    const head = sideB.neighbors[d3]?.neighbors[d1];
-                    if (head) this.link(d3, head, true)
+                for (let i = TOP; i <= LEFT; ++i) {
+                    if (!this.neighbors[i]) {
+                        const dx = (i == RIGHT ? 1 : i == LEFT ? -1 : 0) * this.bb.w;
+                        const dy = (i == TOP ? -1 : i == BOTTOM ? 1 : 0) * this.bb.w;
+                        const adj = cellIndex.get(`${this.pos.x + dx},${this.pos.y + dy}`);
+                        if (adj && !adj.neighbors[(i + 2) % (LEFT + 1)]) {
+                            this.neighbors[i] = adj;
+                            adj.neighbors[(i + 2) % (LEFT + 1)] = this;
+                            this.dist = Math.min(this.dist == 0 ? Infinity : this.dist, adj.dist + 1);
+                        }
+                    }
                 }
             }
 
@@ -171,8 +179,15 @@
 
                 for (let i = TOP; i <= LEFT; ++i)
                     if (!this.neighbors[i]) {
-                        const cell = new Cell(this.pos.add((i == RIGHT ? 1 : i == LEFT ? -1 : 0) * size, (i == TOP ? -1 : i == BOTTOM ? 1 : 0) * size), size);
-                        cell.link((i + 2) % (LEFT + 1), this);
+                        const dx = (i == RIGHT ? 1 : i == LEFT ? -1 : 0) * size;
+                        const dy = (i == TOP ? -1 : i == BOTTOM ? 1 : 0) * size;
+                        const existing = cellIndex.get(`${this.pos.x + dx},${this.pos.y + dy}`);
+                        if (existing) {
+                            existing.link((i + 2) % (LEFT + 1), this);
+                        } else {
+                            const cell = new Cell(this.pos.add(dx, dy), size);
+                            cell.link((i + 2) % (LEFT + 1), this);
+                        }
                     }
             }
         }
@@ -185,6 +200,10 @@
                 this.rollOthers = false;
                 this.autoRoll = false;
                 this.edgeBonus = false;
+                this.doubleDie = false;
+                this.echoRoll = false;
+                this.echoFired = false;
+                this.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
 
                 this.cell = null;
                 this._value = rnd(6) + 1;
@@ -204,37 +223,67 @@
             roll() {
                 let anim = rollAnimTimes;
 
-                if (click && this.bb.contains(cursor)) {
-                    if (action == ENABLE_CLEAN) {
+                if (click && this.bb.contains(scaledCursor)) {
+                    if (action == ENABLE_CLEAN && (this.edgeBonus || this.rollOthers || this.autoRoll || this.doubleDie || this.echoRoll)) {
                         this.edgeBonus = false;
                         this.rollOthers = false;
                         this.autoRoll = false;
+                        this.doubleDie = false;
+                        this.echoRoll = false;
                         score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                     }
-                    if (action == ENABLE_EDGE_BONUS && this.autoRoll == false && this.rollOthers == false && this.edgeBonus == false) {
+                    if (action == ENABLE_EDGE_BONUS && !this.edgeBonus) {
                         this.edgeBonus = true;
+                        this.rollOthers = false;
+                        this.autoRoll = false;
+                        this.doubleDie = false;
+                        this.echoRoll = false;
                         score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                     }
-                    if (action == ENABLE_ROLL_OTHERS && this.autoRoll == false && this.rollOthers == false) {
+                    if (action == ENABLE_ROLL_OTHERS && !this.rollOthers) {
                         this.edgeBonus = false;
                         this.rollOthers = true;
+                        this.autoRoll = false;
+                        this.doubleDie = false;
+                        this.echoRoll = false;
                         score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                     }
-                    if (action == ENABLE_AUTOROLL && this.autoRoll == false) {
+                    if (action == ENABLE_AUTOROLL && !this.autoRoll) {
                         this.edgeBonus = false;
                         this.rollOthers = false;
                         this.autoRoll = true;
+                        this.doubleDie = false;
+                        this.echoRoll = false;
                         score -= actions.filter(a => a.symbol == action)[0].use();
                         action = null;
                         anim = 0;
+                    }
+                    if (action == ENABLE_DOUBLEDIE && !this.doubleDie) {
+                        this.edgeBonus = false;
+                        this.rollOthers = false;
+                        this.autoRoll = false;
+                        this.doubleDie = true;
+                        this.echoRoll = false;
+                        score -= actions.filter(a => a.symbol == action)[0].use();
+                        action = null;
+                    }
+                    if (action == ENABLE_ECHOROLL && !this.echoRoll) {
+                        this.edgeBonus = false;
+                        this.rollOthers = false;
+                        this.autoRoll = false;
+                        this.doubleDie = false;
+                        this.echoRoll = true;
+                        score -= actions.filter(a => a.symbol == action)[0].use();
+                        action = null;
                     }
                 }
 
                 if (this.state != IDLE) return;
 
+                this.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
                 sound();
 
                 this.state = ROLLING;
@@ -242,6 +291,114 @@
                 this.acc = 0;
 
                 if (this.rollOthers || this.autoRoll) setTimeout(() => this.cell.neighbors.forEach(n => n?.die?.roll()), 400)
+            }
+        }
+
+        class MegaDie extends Die {
+            constructor(cells, size) {
+                const cx = (cells[0].pos.x + cells[3].pos.x) / 2;
+                const cy = (cells[0].pos.y + cells[3].pos.y) / 2;
+                super(new Point(cx, cy), size * 2);
+                this.isMega = true;
+                this.occupiedCells = cells;
+            }
+
+            get neighbors() {
+                const inside = new Set(this.occupiedCells);
+                const out = [];
+                for (const c of this.occupiedCells)
+                    for (const n of c.neighbors)
+                        if (n && !inside.has(n) && !out.includes(n)) out.push(n);
+                return out;
+            }
+
+            roll() {
+                let anim = rollAnimTimes;
+
+                if (click && this.bb.contains(scaledCursor)) {
+                    if (action == ENABLE_CLEAN && (this.edgeBonus || this.rollOthers || this.autoRoll || this.doubleDie || this.echoRoll)) {
+                        const act = actions.find(a => a.symbol == action);
+                        if (score >= 5 * act.price) {
+                            this.edgeBonus = false;
+                            this.rollOthers = false;
+                            this.autoRoll = false;
+                            this.doubleDie = false;
+                            this.echoRoll = false;
+                            score -= 5 * act.use();
+                            action = null;
+                        }
+                    }
+                    if (action == ENABLE_EDGE_BONUS && !this.edgeBonus) {
+                        const act = actions.find(a => a.symbol == action);
+                        if (score >= 5 * act.price) {
+                            this.edgeBonus = true;
+                            this.rollOthers = false;
+                            this.autoRoll = false;
+                            this.doubleDie = false;
+                            this.echoRoll = false;
+                            score -= 5 * act.use();
+                            action = null;
+                        }
+                    }
+                    if (action == ENABLE_ROLL_OTHERS && !this.rollOthers) {
+                        const act = actions.find(a => a.symbol == action);
+                        if (score >= 5 * act.price) {
+                            this.edgeBonus = false;
+                            this.rollOthers = true;
+                            this.autoRoll = false;
+                            this.doubleDie = false;
+                            this.echoRoll = false;
+                            score -= 5 * act.use();
+                            action = null;
+                        }
+                    }
+                    if (action == ENABLE_AUTOROLL && !this.autoRoll) {
+                        const act = actions.find(a => a.symbol == action);
+                        if (score >= 5 * act.price) {
+                            this.edgeBonus = false;
+                            this.rollOthers = false;
+                            this.autoRoll = true;
+                            this.doubleDie = false;
+                            this.echoRoll = false;
+                            score -= 5 * act.use();
+                            action = null;
+                            anim = 0;
+                        }
+                    }
+                    if (action == ENABLE_DOUBLEDIE && !this.doubleDie) {
+                        const act = actions.find(a => a.symbol == action);
+                        if (score >= 5 * act.price) {
+                            this.edgeBonus = false;
+                            this.rollOthers = false;
+                            this.autoRoll = false;
+                            this.doubleDie = true;
+                            this.echoRoll = false;
+                            score -= 5 * act.use();
+                            action = null;
+                        }
+                    }
+                    if (action == ENABLE_ECHOROLL && !this.echoRoll) {
+                        const act = actions.find(a => a.symbol == action);
+                        if (score >= 5 * act.price) {
+                            this.edgeBonus = false;
+                            this.rollOthers = false;
+                            this.autoRoll = false;
+                            this.doubleDie = false;
+                            this.echoRoll = true;
+                            score -= 5 * act.use();
+                            action = null;
+                        }
+                    }
+                }
+
+                if (this.state != IDLE) return;
+                this.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
+                sound();
+                this.state = ROLLING;
+                this.anim = anim;
+                this.acc = 0;
+
+                if (this.rollOthers || this.autoRoll) setTimeout(() => this.neighbors.forEach(n => n?.die?.roll()), 400)
             }
         }
 
@@ -369,43 +526,66 @@
 
         addAction('KeyZ', ENABLE_CLEAN, 'Clean', 'white', 100, 1.05);
         addAction('KeyX', ENABLE_EDGE_BONUS, 'Edge', '#262ae1', 50, 1.1);
-        addAction('KeyC', ENABLE_ROLL_OTHERS, 'Chain', '#b10e0a', 100, 1.15);
-        addAction('KeyV', ENABLE_AUTOROLL, 'Auto', '#d19002', 750, 1.35, '#b10e0a');
-        //addAction(ENABLE_MEGADIE, 'MEGA', 'black', 500, 1.2, 'white');
+        addAction('KeyD', ENABLE_DOUBLEDIE, 'Double', '#2d8a0e', 50, 1.1, '#ffd700');
+        addAction('KeyE', ENABLE_ECHOROLL, 'Echo', '#e88000', 100, 1.15, 'white');
+        addAction('KeyC', ENABLE_ROLL_OTHERS, 'Chain', '#b10e0a', 200, 1.15);
+        addAction('KeyV', ENABLE_AUTOROLL, 'Auto', '#d19002', 5000, 1.25, '#b10e0a');
+        addAction('KeyB', ENABLE_MEGADIE, 'Mega', 'black', 500, 1.2, 'white');
 
         const ui = [new Button(new Point(ox - uiLine, -oy + uiLine), drawMute, toggleMute)];
 
         const root = new Cell(new Point(0, 0), gridStep);
 
         const cursor = new Point(0, 0);
+        const scaledCursor = new Point(0, 0);
         let click = false;
+        let mouseDown = false;
+        const dragRolled = new Set();
         ctx.canvas.addEventListener('mousemove', ({ clientX, clientY }) => { cursor.x = clientX - ox, cursor.y = clientY - oy })
-        addEventListener('mousedown', () => click = true)
+        addEventListener('mousedown', () => { click = true; mouseDown = true; })
+        addEventListener('mouseup', () => { mouseDown = false; dragRolled.clear(); })
         addEventListener('keydown', ({ code }) => { if (code in commands) commands[code]() });
 
         const rollAnimDuration = 150;
         const rollAnimTimes = 10;
 
-        let buyDiePrice = 10;
-        let buyDieInflation = 1.05;
-        let score = buyDiePrice;
+        let buyDiePrice = 7.5;
+        let buyDieInflation = 1.1;
+        let score = buyPrice(0);
         let scoreSample = 0;
-        let scoreSamples = [];
-        let maxScoreSamples = 100;
         let scoreSampleAcc = 0;
-        let scoreSampleId = 0;
         let scoreSampleInterval = 1000;
         let scoreGain = 0;
+        let scoreGainTimer = 0;
 
         let scoreShift = new Value(0);
         let sprites = [];
+        let pipParticles = [];
+        let sparkParticles = [];
+
+        function buyPrice(dist) {
+            return Math.pow(buyDiePrice, 1.25 + 1.25 * dist / 10) | 0;
+        }
 
         function updateDie(die, delta) {
             die.tilt.tick(delta);
             die.scale.tick(delta);
 
-            if (!die.autoRoll && click && die.bb.contains(cursor)) {
-                die.roll()
+            if (dragRolled.has(die) && !die.bb.contains(scaledCursor)) dragRolled.delete(die);
+
+            if (!die.autoRoll && mouseDown && die.bb.contains(scaledCursor) && !dragRolled.has(die)) {
+                dragRolled.add(die);
+                if (die.state === ROLLING && !action) {
+                    playDing();
+                    spawnSparks(scaledCursor);
+                } else {
+                    die.roll();
+                }
+            }
+
+            if (die.state === IDLE && !die.autoRoll && (die.idleTimer -= delta) <= 0) {
+                die.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
+                die.roll();
             }
 
             if (die.state === IDLE && die.autoRoll && (die.acc -= delta) <= 0) {
@@ -433,6 +613,15 @@
                     dieScored(die);
                     scoreShift.reset(-40 + rnd(80), 0, rollAnimDuration);
 
+                    if (die.echoRoll) {
+                        if (!die.echoFired) {
+                            die.echoFired = true;
+                            setTimeout(() => die.roll(), 400);
+                        } else {
+                            die.echoFired = false;
+                        }
+                    }
+
                     if (die.autoRoll) {
                         die.anim = rollAnimTimes;
                         die.acc = 0;
@@ -441,9 +630,81 @@
             }
         }
 
+        function findMegaGroup(cell) {
+            if (!cell || !cell.die || cell.die.isMega) return null;
+            const cx = cell.pos.x, cy = cell.pos.y, s = gridStep;
+            const anchors = [[cx, cy], [cx - s, cy], [cx, cy - s], [cx - s, cy - s]];
+            for (const [ax, ay] of anchors) {
+                const c00 = cellIndex.get(`${ax},${ay}`);
+                const c10 = cellIndex.get(`${ax + s},${ay}`);
+                const c01 = cellIndex.get(`${ax},${ay + s}`);
+                const c11 = cellIndex.get(`${ax + s},${ay + s}`);
+                if (c00 && c10 && c01 && c11 &&
+                    c00.die && !c00.die.isMega &&
+                    c10.die && !c10.die.isMega &&
+                    c01.die && !c01.die.isMega &&
+                    c11.die && !c11.die.isMega) {
+                    return [c00, c10, c01, c11];
+                }
+            }
+            return null;
+        }
+
+        function actionColor() {
+            const a = actions.find(x => x.symbol === action);
+            return a ? a.color : null;
+        }
+
+        function isActionTarget(die) {
+            if (!die) return false;
+            let ok;
+            switch (action) {
+                case ENABLE_CLEAN: ok = die.edgeBonus || die.rollOthers || die.autoRoll || die.doubleDie || die.echoRoll; break;
+                case ENABLE_EDGE_BONUS: ok = !die.edgeBonus; break;
+                case ENABLE_ROLL_OTHERS: ok = !die.rollOthers; break;
+                case ENABLE_AUTOROLL: ok = !die.autoRoll; break;
+                case ENABLE_DOUBLEDIE: ok = !die.doubleDie; break;
+                case ENABLE_ECHOROLL: ok = !die.echoRoll; break;
+                default: return false;
+            }
+            if (!ok) return false;
+            if (die.isMega) {
+                const act = actions.find(a => a.symbol === action);
+                if (!act || score < 5 * act.price) return false;
+            }
+            return true;
+        }
+
         function updateCell(cell, delta) {
-            const price = Math.pow(buyDiePrice, 1 + cell.dist / 10) | 0;
-            if (click && !cell.die && cell.bb.contains(cursor) && score >= price) {
+            if (cell.die && cell.die.isMega && cell.die.occupiedCells[0] !== cell) return;
+
+            if (action == ENABLE_MEGADIE && click && cell.bb.contains(scaledCursor)) {
+                const found = findMegaGroup(cell);
+                if (found) {
+                    score -= actions.filter(a => a.symbol == action)[0].use();
+                    action = null;
+                    const megaDie = new MegaDie(found, cellSize);
+                    for (const c of found) c.die = megaDie;
+                    megaDie.cell = found[0];
+                    click = false;
+                }
+            }
+
+            if (action == ENABLE_CLEAN && click && cell.die && cell.die.isMega && cell.die.occupiedCells[0] === cell && cell.die.bb.contains(scaledCursor)) {
+                score -= actions.filter(a => a.symbol == action)[0].use();
+                action = null;
+                const occupied = cell.die.occupiedCells;
+                for (const c of occupied) {
+                    c.value = null;
+                    const d = new Die(c.pos, cellSize);
+                    c.die = d;
+                    d.roll();
+                }
+                click = false;
+            }
+
+            const price = buyPrice(cell.dist)
+            if (click && score >= price && !cell.die && cell.bb.contains(scaledCursor)) {
                 score -= price;
                 buyDiePrice = (buyDiePrice * buyDieInflation) | 0;
                 cell.die = new Die(cell.pos, cellSize);
@@ -454,28 +715,157 @@
             if (cell.die) updateDie(cell.die, delta);
         }
 
-        // powerup ideas
-        // x2 dice - multiply any single dice score by a factor
-        // edge - bonus for each empty neighbour
-        // pair - give score for a pair of adjacent dice of the same value
-        // set - give score for three of adjacent dice of the same value
-        // square - give score for four of adjacent dice of the same value
-        // cross -  give score for five of adjacent dice of the same value
-        // auto roller - roll adjacent dice on a timer
-        //     or roll adjacent dice of the same value
-        // megadie - a dice that occupies four spots
+        function neighborValue(n) {
+            return n?.die?.value;
+        }
+
+        // Builds an ordered array of die objects along an axis, with scoringDie at its spatial position.
+        // anchorA/dirA is one side, anchorB/dirB is the opposite side.
+        // Returns { lineDice, dieIndex } — megadie deduped (counts once).
+        function collectLineDice(scoringDie, anchorA, dirA, anchorB, dirB) {
+            const forward = [];
+            let n = anchorA.neighbors[dirA];
+            let lastDie = null;
+            while (neighborValue(n) != null) {
+                if (n.die !== lastDie) { forward.push(n.die); lastDie = n.die; }
+                n = n.neighbors[dirA];
+                while (n && n.die && n.die === lastDie) n = n.neighbors[dirA];
+            }
+            const backward = [];
+            n = anchorB.neighbors[dirB];
+            lastDie = null;
+            while (neighborValue(n) != null) {
+                if (n.die !== lastDie) { backward.push(n.die); lastDie = n.die; }
+                n = n.neighbors[dirB];
+                while (n && n.die && n.die === lastDie) n = n.neighbors[dirB];
+            }
+            const lineDice = [...forward.reverse(), scoringDie, ...backward];
+            return { lineDice, dieIndex: forward.length };
+        }
+
+        // Finds the longest consecutive straight in lineDice that contains dieIndex.
+        // Returns { len, bonus, dice } or null. Tries 6→5→4; takes first (longest) match.
+        function checkStraight(lineDice, dieIndex) {
+            const values = lineDice.map(d => d.value);
+            for (let len = 6; len >= 4; len--) {
+                for (let start = 0; start <= values.length - len; start++) {
+                    if (dieIndex < start || dieIndex >= start + len) continue;
+                    const w = values.slice(start, start + len);
+                    const asc = w.every((v, j) => j === 0 || v === w[j - 1] + 1);
+                    const desc = w.every((v, j) => j === 0 || v === w[j - 1] - 1);
+                    if (asc || desc) {
+                        const maxVal = Math.max(...w);
+                        const multiplier = len >= 6 ? 100 : len === 5 ? 20 : 10;
+                        return { len, bonus: maxVal * multiplier, dice: lineDice.slice(start, start + len) };
+                    }
+                }
+            }
+            return null;
+        }
 
         function dieScored(die) {
+            if (die.isMega) {
+                const c00 = die.occupiedCells[0], c10 = die.occupiedCells[1], c01 = die.occupiedCells[2], c11 = die.occupiedCells[3];
+
+                let gain = die.value * 10;
+                pop('+' + die.value + '×10', die.pos, 0, gain);
+
+                let floor = 0;
+                let squares = 0;
+
+                // blocks: a 2x2 square of matching dice hanging off each corner of the megadie
+                const corners = [[c00, TOP, LEFT], [c10, TOP, RIGHT], [c11, BOTTOM, RIGHT], [c01, BOTTOM, LEFT]];
+                for (const [c, dA, dB] of corners) {
+                    if (neighborValue(c.neighbors[dA]) == die.value
+                        && neighborValue(c.neighbors[dB]) == die.value
+                        && neighborValue(c.neighbors[dA]?.neighbors[dB]) == die.value) {
+                        squares++;
+                    }
+                }
+
+                if (squares > 0) {
+                    gain += die.value * squares * 8;
+                    floor = 3;
+                    pop((squares == 1 ? 'Block' : ['', 'One', 'Two', 'Three', 'Four'][squares] + ' blocks') + ' of ' + die.value + 's', die.pos, 3 + squares * 2, die.value * squares * 8);
+                }
+
+                // cross: every cardinal side of the megadie span has at least one matching die
+                const sides = [
+                    [c00.neighbors[TOP], c10.neighbors[TOP]],
+                    [c10.neighbors[RIGHT], c11.neighbors[RIGHT]],
+                    [c01.neighbors[BOTTOM], c11.neighbors[BOTTOM]],
+                    [c00.neighbors[LEFT], c01.neighbors[LEFT]]
+                ];
+                if (squares < 2 && sides.every(side => side.some(n => neighborValue(n) == die.value))) {
+                    floor = 2 + squares / 2;
+                    gain += die.value * 9;
+                    pop('Cross of ' + die.value + 's', die.pos, 6, die.value * 9);
+                }
+
+                // pairs/sets/straights along all 4 parallel spines (2 per axis direction)
+                const axes = [
+                    [c00, TOP, c01, BOTTOM],
+                    [c10, TOP, c11, BOTTOM],
+                    [c00, LEFT, c10, RIGHT],
+                    [c01, LEFT, c11, RIGHT],
+                ];
+                for (const [ca, da, cb, db] of axes) {
+                    let s = 0;
+
+                    let n = ca.neighbors[da];
+                    let lastCountedDie = null;
+                    while (s < 4 && neighborValue(n) == die.value) {
+                        ++s;
+                        lastCountedDie = n.die;
+                        n = n.neighbors[da];
+                        while (n && n.die && n.die === lastCountedDie) n = n.neighbors[da];
+                    }
+
+                    n = cb.neighbors[db];
+                    lastCountedDie = null;
+                    while (s < 4 && neighborValue(n) == die.value) {
+                        ++s;
+                        lastCountedDie = n.die;
+                        n = n.neighbors[db];
+                        while (n && n.die && n.die === lastCountedDie) n = n.neighbors[db];
+                    }
+
+                    if (s > floor) {
+                        gain += die.value * (2 * s - 1);
+                        pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos, s, die.value * (2 * s - 1));
+                    }
+                }
+
+                for (const [ca, da, cb, db] of axes) {
+                    const { lineDice, dieIndex } = collectLineDice(die, ca, da, cb, db);
+                    const st = checkStraight(lineDice, dieIndex);
+                    if (st) {
+                        gain += st.bonus;
+                        const label = st.len >= 6 ? 'Legendary Straight!' : st.len === 5 ? 'Large Straight!' : 'Small Straight!';
+                        pop(label, die.pos, st.len + 3, st.bonus);
+                        setTimeout(() => { for (const d of st.dice) d.roll(); }, 600);
+                    }
+                }
+
+                if (die.doubleDie) { const doubleBonus = gain; gain *= 2; pop('×2', die.pos, 5, doubleBonus); }
+
+                spawnPips(die, gain);
+                scoreSample += gain;
+
+                score += gain;
+                return;
+            }
+
             let gain = die.value;
-            pop('+' + die.value, die.pos, 0);
+            pop('+' + die.value, die.pos, 0, die.value);
 
             let floor = 0;
             let squares = 0;
 
             for (let i = TOP; i <= LEFT; ++i) {
-                let sideA = die.cell.neighbors[i]?.die?.value;
-                let sideB = die.cell.neighbors[(i + 1) % (LEFT + 1)]?.die?.value;
-                let diag = die.cell.neighbors[i]?.neighbors[(i + 1) % (LEFT + 1)]?.die?.value;
+                let sideA = neighborValue(die.cell.neighbors[i]);
+                let sideB = neighborValue(die.cell.neighbors[(i + 1) % (LEFT + 1)]);
+                let diag = neighborValue(die.cell.neighbors[i]?.neighbors[(i + 1) % (LEFT + 1)]);
 
                 if (sideA == sideB && sideB == diag && diag == die.value) {
                     squares++
@@ -485,45 +875,67 @@
             if (squares > 0) {
                 gain += die.value * squares * 8;
                 floor = 3;
-                pop((squares == 1 ? 'Block' : ['', 'One', 'Two', 'Three', 'Four'][squares] + ' blocks') + ' of ' + die.value + 's', die.pos, 3 + squares * 2);
+                pop((squares == 1 ? 'Block' : ['', 'One', 'Two', 'Three', 'Four'][squares] + ' blocks') + ' of ' + die.value + 's', die.pos, 3 + squares * 2, die.value * squares * 8);
             }
 
-            if (squares < 2 && die.cell.neighbors.every(n => n?.die?.value == die.value)) {
+            if (squares < 2 && die.cell.neighbors.every(n => neighborValue(n) == die.value)) {
                 floor = 2 + squares / 2;
                 gain += die.value * 9;
-                pop('Cross of ' + die.value + 's', die.pos, 6);
+                pop('Cross of ' + die.value + 's', die.pos, 6, die.value * 9);
             }
 
             for (let i = TOP; i < BOTTOM; ++i) {
                 let n = die.cell.neighbors[i];
 
                 let s = 0;
-                while (s < 4 && ((die.edgeBonus && n?.die?.value == null) || n?.die?.value == die.value)) {
+                let lastCountedDie = null;
+                while (s < 4 && ((die.edgeBonus && neighborValue(n) == null) || neighborValue(n) == die.value)) {
                     ++s;
                     if (die.edgeBonus) break;
+                    lastCountedDie = n.die;
                     n = n.neighbors[i];
+                    while (n && n.die && n.die === lastCountedDie) n = n.neighbors[i];
                 }
 
                 n = die.cell.neighbors[(i + 2) % (LEFT + 1)]
+                lastCountedDie = null;
 
-                while (s < 4 && ((die.edgeBonus && n?.die?.value == null) || n?.die?.value == die.value)) {
+                while (s < 4 && ((die.edgeBonus && neighborValue(n) == null) || neighborValue(n) == die.value)) {
                     ++s;
-                    if (die.edgeBonus && n?.die?.value == null) break;
+                    if (die.edgeBonus && neighborValue(n) == null) break;
+                    lastCountedDie = n.die;
                     n = n.neighbors[(i + 2) % (LEFT + 1)]
+                    while (n && n.die && n.die === lastCountedDie) n = n.neighbors[(i + 2) % (LEFT + 1)]
                 }
 
                 if (s > floor) {
                     gain += die.value * (2 * s - 1);
-                    pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos.add(die.cell.neighbors[i].pos).scale(.5), s)
+                    pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos.add(die.cell.neighbors[i].pos).scale(.5), s, die.value * (2 * s - 1))
                 }
             }
 
+            for (let i = TOP; i < BOTTOM; ++i) {
+                const opp = (i + 2) % (LEFT + 1);
+                const { lineDice, dieIndex } = collectLineDice(die, die.cell, i, die.cell, opp);
+                const st = checkStraight(lineDice, dieIndex);
+                if (st) {
+                    gain += st.bonus;
+                    const label = st.len >= 6 ? 'Legendary Straight!' : st.len === 5 ? 'Large Straight!' : 'Small Straight!';
+                    pop(label, die.pos, st.len + 3, st.bonus);
+                    setTimeout(() => { for (const d of st.dice) d.roll(); }, 600);
+                }
+            }
+
+            if (die.doubleDie) { const doubleBonus = gain; gain *= 2; pop('×2', die.pos, 5, doubleBonus); }
+
+            spawnPips(die, gain);
             scoreSample += gain;
             score += gain;
         }
 
-        function pop(text, pos, level) {
-            sprites.push(new Sprite(text, pos, cellSize * (.25 + level / 10), -130 + rnd(80), (300 + level * 100) * (95 + rnd(10)) / 100));
+        function pop(text, pos, level, gain) {
+            const mag = 1 + Math.floor(Math.log10(Math.max(1, gain || 1)));
+            sprites.push(new Sprite(text, pos, cellSize * (.25 + level / 10), -130 + rnd(80), (360 + level * 100) * mag * (95 + rnd(10)) / 100));
         }
 
         function updateSprite(sprite, delta) {
@@ -532,6 +944,32 @@
         }
 
         function update(delta) {
+            let targetZoom = defaultZoom;
+            let targetCamX = 0, targetCamY = 0;
+            const placedDice = cells.filter(c => c.die != null);
+            if (placedDice.length > 0) {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const c of placedDice) {
+                    minX = Math.min(minX, c.pos.x - gridStep / 2);
+                    minY = Math.min(minY, c.pos.y - gridStep / 2);
+                    maxX = Math.max(maxX, c.pos.x + gridStep / 2);
+                    maxY = Math.max(maxY, c.pos.y + gridStep / 2);
+                }
+                minX -= gridStep; minY -= gridStep; maxX += gridStep; maxY += gridStep;
+                const boxW = maxX - minX;
+                const boxH = maxY - minY;
+                targetZoom = Math.min(ctx.canvas.width / boxW, ctx.canvas.height / boxH, defaultZoom);
+                targetCamX = (minX + maxX) / 2;
+                targetCamY = (minY + maxY) / 2;
+            }
+            const ease = 0.001 * delta;
+            currentZoom += (targetZoom - currentZoom) * ease;
+            cameraX += (targetCamX - cameraX) * ease;
+            cameraY += (targetCamY - cameraY) * ease;
+
+            scaledCursor.x = cursor.x / currentZoom + cameraX;
+            scaledCursor.y = cursor.y / currentZoom + cameraY;
+
             scoreShift.tick(delta);
 
             for (let action of actions) {
@@ -541,19 +979,29 @@
                 }
             }
 
-            cells.forEach(cell => updateCell(cell, delta));
-            sprites = sprites.filter(sprite => updateSprite(sprite, delta));
-
-            for (let btn of ui) {
-                if (click && btn.bb.contains(cursor.x, cursor.y))
+            for (let i = ui.length - 1; i >= 0; --i) {
+                const btn = ui[i];
+                if (click && btn.bb.contains(cursor.x, cursor.y)) {
                     btn.click(btn);
+                    click = false;
+                    break;
+                }
             }
 
-            if ((scoreSampleAcc += delta) > scoreSampleInterval) {
-                scoreSamples[scoreSampleId] = scoreSample;
-                if (++scoreSampleId > maxScoreSamples) scoreSampleId = 0;
+            cells.forEach(cell => updateCell(cell, delta));
+            sprites = sprites.filter(sprite => updateSprite(sprite, delta));
+            for (let p of pipParticles) p.tick(delta);
+            pipParticles = pipParticles.filter(p => p.isLive);
+            for (let p of sparkParticles) p.tick(delta);
+            sparkParticles = sparkParticles.filter(p => p.isLive);
 
-                scoreGain = (scoreSamples.reduce((sum, s) => sum + s / maxScoreSamples) * 1000 / scoreSampleInterval) | 0;
+            if (scoreGainTimer > 0) scoreGainTimer -= delta;
+
+            if ((scoreSampleAcc += delta) > scoreSampleInterval) {
+                if (scoreSample > 0) {
+                    scoreGain = scoreSample;
+                    scoreGainTimer = 2000;
+                }
                 scoreSample = 0;
                 scoreSampleAcc -= scoreSampleInterval;
             }
@@ -577,7 +1025,23 @@
         function renderDie(die) {
             ctx.save();
 
-            if (die.state == IDLE && !die.autoRoll && die.bb.contains(cursor)) {
+            if (die.isMega) {
+                if (die.state == IDLE && !die.autoRoll && die.bb.contains(scaledCursor)) {
+                    ctx.fillStyle = 'white';
+                    roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 4);
+                    ctx.fill();
+                }
+                ctx.translate(die.pos.x, die.pos.y);
+                ctx.rotate(die.tilt.value * deg);
+                ctx.scale(die.scale.value, die.scale.value);
+                drawDice(ctx, die.rollingValue, cellSize * 2,
+                    die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : die.doubleDie ? '#2d8a0e' : die.echoRoll ? '#e88000' : null,
+                    die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : die.doubleDie ? '#ffd700' : die.echoRoll ? 'white' : null);
+                ctx.restore();
+                return;
+            }
+
+            if (die.state == IDLE && !die.autoRoll && die.bb.contains(scaledCursor)) {
                 ctx.fillStyle = 'white';
                 roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 8);
                 ctx.fill();
@@ -588,8 +1052,8 @@
             ctx.scale(die.scale.value, die.scale.value);
 
             drawDice(ctx, die.rollingValue, cellSize,
-                die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : null,
-                die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : null);
+                die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : die.doubleDie ? '#2d8a0e' : die.echoRoll ? '#e88000' : null,
+                die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : die.doubleDie ? '#ffd700' : die.echoRoll ? 'white' : null);
 
             ctx.fillStyle = 'white';
             ctx.strokeStyle = 'black';
@@ -601,11 +1065,11 @@
         function renderCell(cell) {
             if (!cell.die) {
                 ctx.font = '24pt Georgia'
-                const price = Math.pow(buyDiePrice, 1 + cell.dist / 10) | 0;
+                const price = buyPrice(cell.dist);
                 if (score < price) {
                     ctx.fillStyle = 'rgba(255, 255, 255, .2)';
                 }
-                else if (cell.bb.contains(cursor)) {
+                else if (cell.bb.contains(scaledCursor)) {
                     ctx.fillStyle = 'white';
                 }
                 else {
@@ -616,7 +1080,54 @@
                 ctext(price, cell.pos.x, cell.pos.y, 0)
             }
 
-            if (cell.die) renderDie(cell.die)
+            if (cell.die && (!cell.die.isMega || cell.die.occupiedCells[0] === cell)) renderDie(cell.die)
+        }
+
+        function renderActionHighlight() {
+            if (!action) return;
+            const color = actionColor();
+            if (!color) return;
+            const pad = 6;
+
+            if (action == ENABLE_MEGADIE) {
+                for (const cell of cells) {
+                    if (!cell.bb.contains(scaledCursor)) continue;
+                    const found = findMegaGroup(cell);
+                    if (!found) return;
+                    const x = found[0].pos.x - cellSize / 2 - pad;
+                    const y = found[0].pos.y - cellSize / 2 - pad;
+                    const w = gridStep + cellSize + 2 * pad;
+                    roundedRect(ctx, x, y, w, w, (gridStep + cellSize) / 10);
+                    ctx.lineWidth = cellSize / 15;
+                    ctx.strokeStyle = color;
+                    ctx.stroke();
+                    return;
+                }
+                return;
+            }
+
+            for (const cell of cells) {
+                const die = cell.die;
+                if (!die || !die.isMega || die.occupiedCells[0] !== cell) continue;
+                if (!die.bb.contains(scaledCursor)) continue;
+                if (!isActionTarget(die)) break;
+                roundedRect(ctx, die.bb.x - pad, die.bb.y - pad, die.bb.w + 2 * pad, die.bb.h + 2 * pad, cellSize / 4);
+                ctx.lineWidth = cellSize / 15;
+                ctx.strokeStyle = color;
+                ctx.stroke();
+                return;
+            }
+
+            for (const cell of cells) {
+                const die = cell.die;
+                if (!die || die.isMega || !die.bb.contains(scaledCursor)) continue;
+                if (!isActionTarget(die)) return;
+                roundedRect(ctx, die.bb.x - pad, die.bb.y - pad, die.bb.w + 2 * pad, die.bb.h + 2 * pad, cellSize / 8);
+                ctx.lineWidth = cellSize / 15;
+                ctx.strokeStyle = color;
+                ctx.stroke();
+                return;
+            }
         }
 
         function render() {
@@ -629,7 +1140,10 @@
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
             ctx.save();
-            ctx.translate(ox, oy);
+            ctx.translate(ox - cameraX * currentZoom, oy - cameraY * currentZoom);
+            ctx.scale(currentZoom, currentZoom);
+
+            renderActionHighlight();
 
             for (let cell of cells) {
                 renderCell(cell)
@@ -640,6 +1154,25 @@
                 ctx.strokeStyle = 'white'
                 ctext(sprite.value, sprite.pos.x, sprite.pos.y, sprite.dir + 90 * deg)
             }
+
+            ctx.save();
+            for (let p of pipParticles) {
+                const pos = p.pos;
+                dot(ctx, pos.x, pos.y, p.radius, p.color);
+            }
+            ctx.restore();
+
+            ctx.save();
+            for (let p of sparkParticles) {
+                const pos = p.pos;
+                dot(ctx, pos.x, pos.y, p.radius, '#ffd700');
+            }
+            ctx.restore();
+
+            ctx.restore();
+
+            ctx.save();
+            ctx.translate(ox, oy);
 
             for (let btn of ui) {
                 btn.draw(btn);
@@ -652,7 +1185,7 @@
             ctx.fillStyle = 'white';
             ctx.strokeStyle = 'black';
 
-            if (scoreGain > 1.5)
+            if (scoreGain > 0 && scoreGainTimer > 0)
                 ctext('+' + scoreGain, cellSize, 1.5 * cellSize, scoreShift.value * deg)
             ctext(score, cellSize, cellSize, scoreShift.value * deg)
         }
@@ -821,6 +1354,96 @@
         }
 
         function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+
+        function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
+        class PipParticle {
+            constructor(startPos, targetPos, delay, duration, color) {
+                this.startPos = startPos;
+                this.targetPos = targetPos;
+                this.delay = delay;
+                this.duration = duration;
+                this.color = color;
+                this.age = 0;
+
+                const dx = targetPos.x - startPos.x;
+                const dy = targetPos.y - startPos.y;
+                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                const px = -dy / len;
+                const py = dx / len;
+                const midX = (startPos.x + targetPos.x) / 2;
+                const midY = (startPos.y + targetPos.y) / 2;
+                const side = Math.random() < 0.5 ? 1 : -1;
+                const offset = cellSize * (0.5 + Math.random()) * side;
+                this.controlPoint = new Point(midX + px * offset, midY + py * offset);
+            }
+
+            tick(delta) { this.age += delta; }
+
+            get isLive() { return this.age < this.delay + this.duration; }
+
+            get pos() {
+                const raw = clamp((this.age - this.delay) / this.duration, 0, 1);
+                const t = fade(raw);
+                const target = new Point((cellSize - ox) / currentZoom + cameraX, (cellSize - oy) / currentZoom + cameraY);
+                const p0x = this.startPos.x + (this.controlPoint.x - this.startPos.x) * t;
+                const p0y = this.startPos.y + (this.controlPoint.y - this.startPos.y) * t;
+                const p1x = this.controlPoint.x + (target.x - this.controlPoint.x) * t;
+                const p1y = this.controlPoint.y + (target.y - this.controlPoint.y) * t;
+                return new Point(p0x + (p1x - p0x) * t, p0y + (p1y - p0y) * t);
+            }
+
+            get radius() {
+                return cellSize / 8;
+            }
+        }
+
+        function spawnPips(die, gain) {
+            const count = Math.min(gain, 30);
+            const target = new Point((cellSize - ox) / currentZoom + cameraX, (cellSize - oy) / currentZoom + cameraY);
+            const pipColor = die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : die.doubleDie ? '#ffd700' : die.echoRoll ? 'white' : null;
+            for (let i = 0; i < count; i++) {
+                const startX = die.pos.x + (Math.random() - 0.5) * cellSize * 0.3;
+                const startY = die.pos.y + (Math.random() - 0.5) * cellSize * 0.3;
+                const delay = Math.random() * 200;
+                const duration = 600 + Math.random() * 300;
+                pipParticles.push(new PipParticle(new Point(startX, startY), target, delay, duration, pipColor));
+            }
+        }
+
+        class SparkParticle {
+            constructor(pos, angle, speed, duration) {
+                this.startPos = pos;
+                this.angle = angle;
+                this.speed = speed;
+                this.duration = duration;
+                this.age = 0;
+            }
+
+            tick(delta) { this.age += delta; }
+
+            get isLive() { return this.age < this.duration; }
+
+            get pos() {
+                const t = this.age / 1000;
+                return new Point(
+                    this.startPos.x + Math.cos(this.angle) * this.speed * t,
+                    this.startPos.y + Math.sin(this.angle) * this.speed * t);
+            }
+
+            get radius() {
+                return cellSize / 12 * (1 - this.age / this.duration);
+            }
+        }
+
+        function spawnSparks(pos) {
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * tau + (Math.random() - 0.5) * 30 * deg;
+                const speed = cellSize * (1.5 + Math.random() * 1.0);
+                const duration = 200 + Math.random() * 150;
+                sparkParticles.push(new SparkParticle(new Point(pos.x, pos.y), angle, speed, duration));
+            }
+        }
     </script>
 </body>
 
