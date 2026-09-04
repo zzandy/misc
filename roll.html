@@ -20,11 +20,17 @@
             sounds.push(row)
         }
 
-        function sound() {
+        function sound(rate) {
             if (!soundOn) return;
 
             const s = sounds[lastSound][sounds[lastSound][0] + 1];
-            setTimeout(() => s.play(), 5 + rnd(20));
+            setTimeout(() => {
+                // pooled elements are reused, so set the rate right before playing.
+                // preservesPitch must be off or the browser corrects the pitch back up.
+                s.preservesPitch = false;
+                s.playbackRate = rate || 1;
+                s.play();
+            }, 5 + rnd(20));
 
             if (++sounds[lastSound][0] >= sounds[lastSound].length - 1) sounds[lastSound][0] = 0;
             lastSound = (lastSound + 1 + rnd(numSounds - 1)) % numSounds;
@@ -88,40 +94,135 @@
 
         const [ox, oy] = [ctx.canvas.width / 2, ctx.canvas.height / 2];
 
+        const uiLine = cellSize / 2;
+        const btnSize = cellSize / 2;
+
+        // uiLine is the buttons' vertical centre; the score is drawn as text (baseline-anchored),
+        // so nudge its baseline down by half the 32pt face's cap height to align optically
+        ctx.font = '32pt Georgia';
+        const scoreBaselineOffset = ctx.measureText('0').actualBoundingBoxAscent / 2;
+
+        const hudPad = 16;
+        const topRowH = uiLine + btnSize * 0.9 + 8;   // row content: button plus its key label
+        const barH = 12;
+        const topInset = topRowH + 6 + barH + 10;     // bottom of the whole HUD, in screen px
+
+        const fieldH = ctx.canvas.height - topInset;
+        const fieldCX = ctx.canvas.width / 2;
+        const fieldCY = topInset + fieldH / 2;
+
+        // maps a screen-space point (raw client coords) to world space
+        function screenToWorld(x, y) { return new Point((x - fieldCX) / currentZoom + cameraX, (y - fieldCY) / currentZoom + cameraY) }
+
+        // screen-space point pips fly toward when they score
+        function scoreAnchor() { return new Point(hudPad, uiLine) }
+
+        // screen-space point time pips fly toward — the centre of the timer bar
+        function timerAnchor() { return new Point(fieldCX, topRowH + 6 + barH / 2) }
+
         let currentZoom = 1;
         let defaultZoom = 1;
-        defaultZoom = Math.min(ctx.canvas.width, ctx.canvas.height) / (7 * gridStep);
+        defaultZoom = Math.min(ctx.canvas.width, fieldH) / (7 * gridStep);
         currentZoom = defaultZoom;
         let cameraX = 0, cameraY = 0;
-
-        ctx.fillRounded = (x, y, w, h, r) => {
-            ctx.beginPath();
-            ctx.moveTo(r, 0,);
-            ctx.lineTo(w - r, 0);
-            ctx.quadraticCurveTo(w, 0, w, r);
-            ctx.lineTo(w, h - r);
-            ctx.quadraticCurveTo(w, h, w - r, h);
-            ctx.lineTo(r, h)
-            ctx.quadraticCurveTo(0, h, 0, h - r)
-            ctx.lineTo(0, r)
-            ctx.quadraticCurveTo(0, 0, r, 0);
-            ctx.closePath();
-            ctx.fill();
-        }
 
         const TOP = 0
         const RIGHT = 1
         const BOTTOM = 2
         const LEFT = 3
-        const dirs = ['TOP', 'RIGHT', 'BOTTOM', 'LEFT']
+
+        const DELTA = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // TOP RIGHT BOTTOM LEFT
+        function opposite(dir) { return (dir + 2) % 4 }
 
         const ENABLE_CLEAN = Symbol('clean');
         const ENABLE_ROLL_OTHERS = Symbol('enable roll others');
         const ENABLE_EDGE_BONUS = Symbol('enable edge bonus');
-        const ENABLE_AUTOROLL = Symbol('enable auto roll');
         const ENABLE_MEGADIE = Symbol('enable megadie');
+        const ENABLE_HYPERDIE = Symbol('enable hyperdie');
         const ENABLE_DOUBLEDIE = Symbol('enable doubledie');
         const ENABLE_ECHOROLL = Symbol('enable echo roll');
+        const ENABLE_QUAKE = Symbol('enable quake');
+        const ENABLE_TIMEDIE = Symbol('enable time die');
+
+        // big dice are heavy: their roll animation takes this much longer per step, and their
+        // sound plays back at the reciprocal rate — slower and, with preservesPitch off, lower
+        const SIZE_TEMPO = { 1: 1, 2: 2, 3: 4 };
+
+        // idle-reroll timeout also scales with size (S11) - same numbers as SIZE_TEMPO today,
+        // but a separate knob: retuning roll animation speed must not silently retune idle timers
+        const SIZE_IDLE = { 1: 1, 2: 2, 3: 4 };
+
+        const PRICE_MULT = { 1: 1, 2: 5, 3: 15 };
+        const BASE_MULT = { 1: 1, 2: 10, 3: 25 };
+
+        // single source of truth for every upgrade: key/label/colours/price/inflation, plus which
+        // die flag it sets (functional axis) or die size it grants (size axis). Row order is the
+        // top-row reveal order.
+        // `idle`: idle-reroll timeout multiplier for the die carrying this upgrade (S11) - a
+        // powerful die rerolling itself for free is worth more, so it waits longer. Absent (or
+        // not a functional record - Clean/Mega/Hyper are not die states) reads as 1 via `?? 1`.
+        // Time's 1 is inert: idleDelay only consults the functional-axis record, so a
+        // Chain+Time die takes Chain's 10, never a compounded 10x1.
+        const UPGRADES = [
+            { symbol: ENABLE_CLEAN, key: 'KeyZ', label: 'Clean', axis: 'clean', flag: null, face: 'white', pip: 'white', price: 100, inflation: 1.05 },
+            { symbol: ENABLE_EDGE_BONUS, key: 'KeyX', label: 'Edge', axis: 'functional', flag: 'edgeBonus', face: '#262ae1', pip: 'white', price: 50, inflation: 1.1, idle: 2 },
+            { symbol: ENABLE_DOUBLEDIE, key: 'KeyD', label: 'Double', axis: 'functional', flag: 'doubleDie', face: '#2d8a0e', pip: '#ffd700', price: 50, inflation: 1.1, idle: 3 },
+            { symbol: ENABLE_ECHOROLL, key: 'KeyE', label: 'Echo', axis: 'functional', flag: 'echoRoll', face: '#e88000', pip: 'white', price: 100, inflation: 1.15, idle: 5 },
+            { symbol: ENABLE_ROLL_OTHERS, key: 'KeyC', label: 'Chain', axis: 'functional', flag: 'rollOthers', face: '#b10e0a', pip: 'white', price: 200, inflation: 1.15, idle: 10 },
+            { symbol: ENABLE_QUAKE, key: 'KeyQ', label: 'Quake', axis: 'functional', flag: 'quake', face: '#bc3a80', pip: 'white', price: 400, inflation: 1.15, idle: 20 },
+            { symbol: ENABLE_TIMEDIE, key: 'KeyT', label: 'Time', axis: 'time', flag: 'timeDie', face: '#0e2b2b', pip: '#7ff3e6', price: 200, inflation: 1.15, timedOnly: true, idle: 1 },
+            { symbol: ENABLE_MEGADIE, key: 'KeyB', label: 'Mega', axis: 'size', flag: null, face: 'black', pip: 'white', price: 500, inflation: 1.2, grants: 2 },
+            { symbol: ENABLE_HYPERDIE, key: 'KeyH', label: 'Hyper', axis: 'size', flag: null, face: 'black', pip: '#7ad7ff', price: 5000, inflation: 1.25, grants: 3 },
+        ];
+
+        // a plain die with no functional upgrade — drawDice treats a null face/pip as "default"
+        const BASE_STYLE = { face: null, pip: null };
+
+        const TIMED = Symbol('timed'), ENDLESS = Symbol('endless');
+        const GAME_DURATION = 90000;
+        let gameMode = TIMED;          // default
+        let timeLeft = GAME_DURATION;
+        let gameOver = false;
+        let timeEfficiency = 1;
+        let lastRecordedTs = null;     // ts of this run's high-score row, for the game-over highlight
+
+        const HS_KEY = 'roll.highscores';
+
+        function loadScores() {
+            try {
+                const raw = localStorage.getItem(HS_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                if (!Array.isArray(parsed)) return [];
+                return parsed.filter(e => e && typeof e.score == 'number' && typeof e.ts == 'number');
+            } catch (e) {
+                return [];
+            }
+        }
+
+        function recordScore(score) {
+            const ts = Date.now();
+            lastRecordedTs = ts;
+            try {
+                const scores = loadScores();
+                scores.push({ score, ts });
+                scores.sort((a, b) => b.score - a.score);
+                scores.length = Math.min(scores.length, 20);
+                localStorage.setItem(HS_KEY, JSON.stringify(scores));
+            } catch (e) {
+            }
+        }
+
+        // 'just now' under 10s, then singular/plural N unit(s) ago
+        function agoString(ms) {
+            let n = Math.floor(ms / 1000);
+            if (n < 10) return 'just now';
+            const units = [[60, 'second'], [60, 'minute'], [24, 'hour'], [30, 'day'], [12, 'month'], [Infinity, 'year']];
+            for (const [size, name] of units) {
+                if (n < size) return n + ' ' + name + (n == 1 ? '' : 's') + ' ago';
+                n = Math.floor(n / size);
+            }
+        }
 
         let action = null;
         const actions = []
@@ -129,6 +230,9 @@
         const commands = {
             'Escape': () => {
                 action = null;
+            },
+            'Backquote': () => {   // debug: double the score
+                score *= 2;
             }
         };
 
@@ -150,7 +254,7 @@
             }
 
             link(dir, neighbor) {
-                const d3 = (dir + 2) % (LEFT + 1);
+                const d3 = opposite(dir);
                 this.neighbors[dir] = neighbor;
                 neighbor.neighbors[d3] = this;
 
@@ -158,12 +262,13 @@
 
                 for (let i = TOP; i <= LEFT; ++i) {
                     if (!this.neighbors[i]) {
-                        const dx = (i == RIGHT ? 1 : i == LEFT ? -1 : 0) * this.bb.w;
-                        const dy = (i == TOP ? -1 : i == BOTTOM ? 1 : 0) * this.bb.w;
+                        const [dxs, dys] = DELTA[i];
+                        const dx = dxs * this.bb.w;
+                        const dy = dys * this.bb.w;
                         const adj = cellIndex.get(`${this.pos.x + dx},${this.pos.y + dy}`);
-                        if (adj && !adj.neighbors[(i + 2) % (LEFT + 1)]) {
+                        if (adj && !adj.neighbors[opposite(i)]) {
                             this.neighbors[i] = adj;
-                            adj.neighbors[(i + 2) % (LEFT + 1)] = this;
+                            adj.neighbors[opposite(i)] = this;
                             this.dist = Math.min(this.dist == 0 ? Infinity : this.dist, adj.dist + 1);
                         }
                     }
@@ -179,31 +284,51 @@
 
                 for (let i = TOP; i <= LEFT; ++i)
                     if (!this.neighbors[i]) {
-                        const dx = (i == RIGHT ? 1 : i == LEFT ? -1 : 0) * size;
-                        const dy = (i == TOP ? -1 : i == BOTTOM ? 1 : 0) * size;
+                        const [dxs, dys] = DELTA[i];
+                        const dx = dxs * size;
+                        const dy = dys * size;
                         const existing = cellIndex.get(`${this.pos.x + dx},${this.pos.y + dy}`);
                         if (existing) {
-                            existing.link((i + 2) % (LEFT + 1), this);
+                            existing.link(opposite(i), this);
                         } else {
                             const cell = new Cell(this.pos.add(dx, dy), size);
-                            cell.link((i + 2) % (LEFT + 1), this);
+                            cell.link(opposite(i), this);
                         }
                     }
             }
         }
+
+        // random idle-roll delay: base 36-44s, scaled by the die's active functional upgrade
+        // (UPGRADES[].idle) and independently by size (SIZE_IDLE) - the two multipliers multiply
+        // together. Resolves the active functional record the same way syncStyle does, so this
+        // stays the one place that fact is looked up rather than a parallel lookup.
+        function idleDelay(die) {
+            const rec = UPGRADES.find(u => u.axis == 'functional' && die[u.flag]);
+            const mult = (rec?.idle ?? 1) * SIZE_IDLE[die.size];
+            return 40000 * mult * (0.9 + Math.random() * 0.2);
+        }
+
+        // idle shiver: warns of an imminent auto-reroll. purely visual - see Die.shiverOffset.
+        const SHIVER_LEAD = 6000;   // shiver begins this far ahead of the reroll
+        const SHIVER_RAMP = 5000;   // amplitude reaches full this long after it begins
+        const NO_SHIVER = { dx: 0, dy: 0, rot: 0 };
 
         class Die {
             constructor(pos, size) {
                 this.pos = pos;
                 this.bb = new AABB(pos.x - size / 2, pos.y - size / 2, size);
 
+                this.size = 1;
                 this.rollOthers = false;
-                this.autoRoll = false;
                 this.edgeBonus = false;
                 this.doubleDie = false;
                 this.echoRoll = false;
                 this.echoFired = false;
-                this.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
+                this.quake = false;
+                this.timeDie = false;
+                this.style = { face: null, pip: null, aberration: false };
+                this.resetIdle();
+                this.shiverPhase = Math.random() * tau;
 
                 this.cell = null;
                 this._value = rnd(6) + 1;
@@ -219,186 +344,85 @@
             get value() { return this.state == IDLE ? this._value : undefined }
             get rollingValue() { return this._value }
             set value(v) { this._value = v }
+            get isBig() { return this.size > 1 }
+            get neighborCells() { return this.cell.neighbors }
+            get footprint() { return [this.cell] }
+            // quake rerolls the full 8-neighbourhood (diagonals included); chain just the
+            // cardinal neighbours. roll() fires on either flag.
+            get chainTargets() { return this.quake ? ringCells(this) : this.neighborCells }
+
+            // warns of an imminent auto-reroll: high-frequency, low-amplitude buzz that ramps in
+            // (via the smootherstep fade, so the onset is imperceptible) over the last few
+            // seconds of idleTimer. purely visual - never touches bb, so hit-testing is unaffected.
+            get shiverOffset() {
+                if (this.state != IDLE) return NO_SHIVER;
+                const ramp = fade(clamp((SHIVER_LEAD - this.idleTimer) / SHIVER_RAMP, 0, 1));
+                if (ramp <= 0) return NO_SHIVER;
+                // three different frequencies: correlated axes would read as a rock, not a shiver
+                const wx = 22 * tau / 1000, wy = 27 * tau / 1000, wr = 31 * tau / 1000;
+                const amp = cellSize * this.size / 50 * ramp;
+                return {
+                    dx: Math.sin(wx * this.idleTimer + this.shiverPhase) * amp,
+                    dy: Math.sin(wy * this.idleTimer + this.shiverPhase) * amp,
+                    rot: Math.sin(wr * this.idleTimer + this.shiverPhase) * 1.2 * ramp,
+                };
+            }
+
+            // the die's drawing style: face/pip colours for its active functional flag (or the
+            // plain-die base style), plus whether it should render the time-die aberration
+            // the die carries its style; drawing code only reads it. flags change in exactly two
+            // places (tryApplyUpgrade, goEndless), both of which sync it.
+            syncStyle() {
+                const rec = UPGRADES.find(u => u.axis == 'functional' && this[u.flag]);
+                this.style.face = rec ? rec.face : BASE_STYLE.face;
+                this.style.pip = rec ? rec.pip : BASE_STYLE.pip;
+                this.style.aberration = this.timeDie;
+            }
+
+            // recomputed from the die's current functional flag and size - see idleDelay. a flag
+            // change (tryApplyUpgrade, Clean, S8 edge revocation) is not retroactive: the new
+            // timeout takes effect on the next reroll, same as it always has, rather than being
+            // recomputed the instant the flag changes.
+            resetIdle() {
+                this.idleTimer = idleDelay(this);
+            }
 
             roll() {
-                let anim = rollAnimTimes;
-
-                if (click && this.bb.contains(scaledCursor)) {
-                    if (action == ENABLE_CLEAN && (this.edgeBonus || this.rollOthers || this.autoRoll || this.doubleDie || this.echoRoll)) {
-                        this.edgeBonus = false;
-                        this.rollOthers = false;
-                        this.autoRoll = false;
-                        this.doubleDie = false;
-                        this.echoRoll = false;
-                        score -= actions.filter(a => a.symbol == action)[0].use();
-                        action = null;
-                    }
-                    if (action == ENABLE_EDGE_BONUS && !this.edgeBonus) {
-                        this.edgeBonus = true;
-                        this.rollOthers = false;
-                        this.autoRoll = false;
-                        this.doubleDie = false;
-                        this.echoRoll = false;
-                        score -= actions.filter(a => a.symbol == action)[0].use();
-                        action = null;
-                    }
-                    if (action == ENABLE_ROLL_OTHERS && !this.rollOthers) {
-                        this.edgeBonus = false;
-                        this.rollOthers = true;
-                        this.autoRoll = false;
-                        this.doubleDie = false;
-                        this.echoRoll = false;
-                        score -= actions.filter(a => a.symbol == action)[0].use();
-                        action = null;
-                    }
-                    if (action == ENABLE_AUTOROLL && !this.autoRoll) {
-                        this.edgeBonus = false;
-                        this.rollOthers = false;
-                        this.autoRoll = true;
-                        this.doubleDie = false;
-                        this.echoRoll = false;
-                        score -= actions.filter(a => a.symbol == action)[0].use();
-                        action = null;
-                        anim = 0;
-                    }
-                    if (action == ENABLE_DOUBLEDIE && !this.doubleDie) {
-                        this.edgeBonus = false;
-                        this.rollOthers = false;
-                        this.autoRoll = false;
-                        this.doubleDie = true;
-                        this.echoRoll = false;
-                        score -= actions.filter(a => a.symbol == action)[0].use();
-                        action = null;
-                    }
-                    if (action == ENABLE_ECHOROLL && !this.echoRoll) {
-                        this.edgeBonus = false;
-                        this.rollOthers = false;
-                        this.autoRoll = false;
-                        this.doubleDie = false;
-                        this.echoRoll = true;
-                        score -= actions.filter(a => a.symbol == action)[0].use();
-                        action = null;
-                    }
-                }
+                if (click && this.bb.contains(scaledCursor) && action) tryApplyUpgrade(this);
 
                 if (this.state != IDLE) return;
 
-                this.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
-                sound();
+                this.resetIdle();
+                sound(1 / SIZE_TEMPO[this.size]);
 
                 this.state = ROLLING;
-                this.anim = anim;
+                this.anim = rollAnimTimes;
                 this.acc = 0;
 
-                if (this.rollOthers || this.autoRoll) setTimeout(() => this.cell.neighbors.forEach(n => n?.die?.roll()), 400)
+                if (this.rollOthers || this.quake) setTimeout(() => this.chainTargets.forEach(n => n?.die?.roll()), 400)
             }
         }
 
-        class MegaDie extends Die {
-            constructor(cells, size) {
-                const cx = (cells[0].pos.x + cells[3].pos.x) / 2;
-                const cy = (cells[0].pos.y + cells[3].pos.y) / 2;
-                super(new Point(cx, cy), size * 2);
-                this.isMega = true;
+        class BigDie extends Die {
+            constructor(cells, n) {          // cells: row-major, length n*n
+                const first = cells[0].pos, last = cells[n * n - 1].pos;
+                super(new Point((first.x + last.x) / 2, (first.y + last.y) / 2), cellSize * n);
+                this.size = n;
                 this.occupiedCells = cells;
+                // super() ran resetIdle() while size was still 1 (plain-die timeout); redo it now
+                // that size is set, since big-die formation never rolls the new die to correct it
+                this.resetIdle();
             }
 
-            get neighbors() {
+            get footprint() { return this.occupiedCells }
+
+            get neighborCells() {
                 const inside = new Set(this.occupiedCells);
                 const out = [];
                 for (const c of this.occupiedCells)
                     for (const n of c.neighbors)
                         if (n && !inside.has(n) && !out.includes(n)) out.push(n);
                 return out;
-            }
-
-            roll() {
-                let anim = rollAnimTimes;
-
-                if (click && this.bb.contains(scaledCursor)) {
-                    if (action == ENABLE_CLEAN && (this.edgeBonus || this.rollOthers || this.autoRoll || this.doubleDie || this.echoRoll)) {
-                        const act = actions.find(a => a.symbol == action);
-                        if (score >= 5 * act.price) {
-                            this.edgeBonus = false;
-                            this.rollOthers = false;
-                            this.autoRoll = false;
-                            this.doubleDie = false;
-                            this.echoRoll = false;
-                            score -= 5 * act.use();
-                            action = null;
-                        }
-                    }
-                    if (action == ENABLE_EDGE_BONUS && !this.edgeBonus) {
-                        const act = actions.find(a => a.symbol == action);
-                        if (score >= 5 * act.price) {
-                            this.edgeBonus = true;
-                            this.rollOthers = false;
-                            this.autoRoll = false;
-                            this.doubleDie = false;
-                            this.echoRoll = false;
-                            score -= 5 * act.use();
-                            action = null;
-                        }
-                    }
-                    if (action == ENABLE_ROLL_OTHERS && !this.rollOthers) {
-                        const act = actions.find(a => a.symbol == action);
-                        if (score >= 5 * act.price) {
-                            this.edgeBonus = false;
-                            this.rollOthers = true;
-                            this.autoRoll = false;
-                            this.doubleDie = false;
-                            this.echoRoll = false;
-                            score -= 5 * act.use();
-                            action = null;
-                        }
-                    }
-                    if (action == ENABLE_AUTOROLL && !this.autoRoll) {
-                        const act = actions.find(a => a.symbol == action);
-                        if (score >= 5 * act.price) {
-                            this.edgeBonus = false;
-                            this.rollOthers = false;
-                            this.autoRoll = true;
-                            this.doubleDie = false;
-                            this.echoRoll = false;
-                            score -= 5 * act.use();
-                            action = null;
-                            anim = 0;
-                        }
-                    }
-                    if (action == ENABLE_DOUBLEDIE && !this.doubleDie) {
-                        const act = actions.find(a => a.symbol == action);
-                        if (score >= 5 * act.price) {
-                            this.edgeBonus = false;
-                            this.rollOthers = false;
-                            this.autoRoll = false;
-                            this.doubleDie = true;
-                            this.echoRoll = false;
-                            score -= 5 * act.use();
-                            action = null;
-                        }
-                    }
-                    if (action == ENABLE_ECHOROLL && !this.echoRoll) {
-                        const act = actions.find(a => a.symbol == action);
-                        if (score >= 5 * act.price) {
-                            this.edgeBonus = false;
-                            this.rollOthers = false;
-                            this.autoRoll = false;
-                            this.doubleDie = false;
-                            this.echoRoll = true;
-                            score -= 5 * act.use();
-                            action = null;
-                        }
-                    }
-                }
-
-                if (this.state != IDLE) return;
-                this.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
-                sound();
-                this.state = ROLLING;
-                this.anim = anim;
-                this.acc = 0;
-
-                if (this.rollOthers || this.autoRoll) setTimeout(() => this.neighbors.forEach(n => n?.die?.roll()), 400)
             }
         }
 
@@ -456,41 +480,41 @@
             }
         }
 
-        const uiLine = cellSize / 2;
-        const btnSize = cellSize / 2;
-
         class Button {
             constructor(pos, draw, click) {
-                this.pos = pos;
-                this.bb = new AABB(pos.x - btnSize / 2, pos.y - btnSize / 2, btnSize);
                 this.draw = draw;
                 this.click = click;
+                this.moveTo(pos);
+            }
+
+            moveTo(pos) {
+                this.pos = pos;
+                this.bb = new AABB(pos.x - btnSize / 2, pos.y - btnSize / 2, btnSize);
             }
         }
 
         class Action {
-            constructor(symbol, label, code, x, color, initialPrice, inflationFactor, pipColor) {
-                this.symbol = symbol;
-                this.label = label;
-                this.code = code;
-                this.color = color;
-                this.pipColor = pipColor || 'white';
-                this.price = initialPrice
-                this.inflationFactor = inflationFactor;
+            constructor(record) {
+                this.record = record;          // static facts: key, label, colours, axis, grants...
+                this.symbol = record.symbol;
+                this.price = record.price;      // mutable — record.price stays the untouched initial price
+                this.timedOnly = !!record.timedOnly;   // hidden and stripped when leaving timed mode (S4.3b)
 
-                this.button = new Button(new Point(x - ox, uiLine - oy), (btn) => this.draw(btn), (btn) => this.click(btn))
+                // real position assigned by layoutTopRow once shown
+                this.button = new Button(new Point(0, uiLine - oy), (btn) => this.draw(btn), (btn) => this.click(btn))
 
                 this.shown = false;
             }
 
             click() {
-                if (action || score < this.price) return;
+                if (gameOver || action || score < this.price) return;
+                if (this.timedOnly && gameMode != TIMED) return;
                 action = this.symbol;
             }
 
             use() {
                 const p = this.price;
-                this.price = this.price * this.inflationFactor | 0;
+                this.price = this.price * this.record.inflation | 0;
                 return p;
             }
 
@@ -498,43 +522,59 @@
                 ctx.save();
                 ctx.translate(btn.pos.x, btn.pos.y)
 
-                drawDice(ctx, 5, btn.bb.w, this.color, this.pipColor)
+                drawDice(ctx, 5, btn.bb.w, { face: this.record.face, pip: this.record.pip, aberration: this.record.axis == 'time' });
 
                 ctx.fillStyle = action && action != this.symbol ? 'grey'
                     : action && action == this.symbol ? (toggle > 10 ? 'grey' : 'white')
                         : score < this.price ? 'grey' : 'white'
 
-                toggle = (toggle + 1) % 20;
-                ctext(this.label, 0, -btn.bb.w / 3, 0);
+                ctext(this.record.label, 0, -btn.bb.w / 3, 0);
                 ctext(this.price, 0, btn.bb.w / 3, 0);
 
                 ctx.font = '12pt Georgia';
-                ctext(this.code, 0, btn.bb.w * .7, 0)
+                ctext(this.record.key.replace('Key', ''), 0, btn.bb.w * .7, 0)
 
                 ctx.restore();
             }
         }
 
-        let actionCursor = cellSize;
-
-        function addAction(code, symbol, label, color, initialPrice, inflationFactor, pipColor) {
-            const action = new Action(symbol, label, code.replace('Key', ''), actionCursor += (2 * btnSize), color, initialPrice, inflationFactor, pipColor);
+        function addAction(record) {
+            const action = new Action(record);
             actions.push(action);
 
-            commands[code] = () => { action.click() }
+            commands[record.key] = () => { action.click() }
         }
 
-        addAction('KeyZ', ENABLE_CLEAN, 'Clean', 'white', 100, 1.05);
-        addAction('KeyX', ENABLE_EDGE_BONUS, 'Edge', '#262ae1', 50, 1.1);
-        addAction('KeyD', ENABLE_DOUBLEDIE, 'Double', '#2d8a0e', 50, 1.1, '#ffd700');
-        addAction('KeyE', ENABLE_ECHOROLL, 'Echo', '#e88000', 100, 1.15, 'white');
-        addAction('KeyC', ENABLE_ROLL_OTHERS, 'Chain', '#b10e0a', 200, 1.15);
-        addAction('KeyV', ENABLE_AUTOROLL, 'Auto', '#d19002', 5000, 1.25, '#b10e0a');
-        addAction('KeyB', ENABLE_MEGADIE, 'Mega', 'black', 500, 1.2, 'white');
+        // centres the shown powerup buttons as a group between the score block and the toggles
+        function layoutTopRow() {
+            const shown = actions.filter(a => a.shown);
+            const k = shown.length;
+            if (!k) return;
 
-        const ui = [new Button(new Point(ox - uiLine, -oy + uiLine), drawMute, toggleMute)];
+            ctx.font = '32pt Georgia';
+            const scoreW = ctx.measureText(String(score)).width;
+            const left = hudPad + scoreW + 90;                          // clear of score + gain readout
+            const right = ctx.canvas.width - hudPad - 2 * btnSize - 8;  // clear of sound + mode toggle slots
+            const available = right - left;
 
-        const root = new Cell(new Point(0, 0), gridStep);
+            const gap = k > 1 ? clamp((available - k * btnSize) / (k - 1), Math.floor(btnSize / 4), btnSize) : btnSize;
+            const totalW = k * btnSize + (k - 1) * gap;
+            let groupLeft = fieldCX - totalW / 2;
+            if (totalW <= available) groupLeft = clamp(groupLeft, left, right - totalW);
+            let x = groupLeft + btnSize / 2;
+            for (const a of shown) {
+                a.button.moveTo(new Point(x - ox, uiLine - oy));
+                x += btnSize + gap;
+            }
+        }
+
+        for (const record of UPGRADES) addAction(record);
+
+        const modeButton = new Button(new Point(ctx.canvas.width - hudPad - btnSize / 2 - btnSize - 8 - ox, uiLine - oy), drawMode, toggleMode);
+        const muteButton = new Button(new Point(ctx.canvas.width - hudPad - btnSize / 2 - ox, uiLine - oy), drawMute, toggleMute);
+        const ui = [modeButton, muteButton];
+
+        new Cell(new Point(0, 0), gridStep);
 
         const cursor = new Point(0, 0);
         const scaledCursor = new Point(0, 0);
@@ -571,30 +611,28 @@
             die.tilt.tick(delta);
             die.scale.tick(delta);
 
+            // a die walled in on all sides has a dead edgeBonus (it pays out on missing
+            // neighbours) - revoke it here, where every die is visited once per frame, so no
+            // placement path (buy, big-die formation, dissolve) can bypass this.
+            if (die.edgeBonus && !hasFreeEdge(die)) {
+                die.edgeBonus = false;
+                die.syncStyle();
+            }
+
             if (dragRolled.has(die) && !die.bb.contains(scaledCursor)) dragRolled.delete(die);
 
-            if (!die.autoRoll && mouseDown && die.bb.contains(scaledCursor) && !dragRolled.has(die)) {
+            if (mouseDown && die.bb.contains(scaledCursor) && !dragRolled.has(die)) {
                 dragRolled.add(die);
                 if (die.state === ROLLING && !action) {
-                    playDing();
-                    spawnSparks(scaledCursor);
+                    ding();
                 } else {
                     die.roll();
                 }
             }
 
-            if (die.state === IDLE && !die.autoRoll && (die.idleTimer -= delta) <= 0) {
-                die.idleTimer = 40000 * (0.9 + Math.random() * 0.2);
+            if (die.state === IDLE && (die.idleTimer -= delta) <= 0) {
+                die.resetIdle();
                 die.roll();
-            }
-
-            if (die.state === IDLE && die.autoRoll && (die.acc -= delta) <= 0) {
-                if (--die.anim > 0) {
-                    die.acc += rollAnimDuration;
-                }
-                else {
-                    die.roll();
-                }
             }
 
             if (die.state === ROLLING && (die.acc -= delta) <= 0) {
@@ -603,9 +641,10 @@
                 die.value = value;
 
                 if (--die.anim > 0) {
-                    die.acc += rollAnimDuration;
-                    die.tilt.reset(-40 + rnd(80), 0, rollAnimDuration);
-                    die.scale.reset(1.1, 1, rollAnimDuration);
+                    const step = rollAnimDuration * SIZE_TEMPO[die.size];
+                    die.acc += step;
+                    die.tilt.reset(-40 + rnd(80), 0, step);
+                    die.scale.reset(1.1, 1, step);
                 }
                 else {
                     // done animating
@@ -621,86 +660,149 @@
                             die.echoFired = false;
                         }
                     }
-
-                    if (die.autoRoll) {
-                        die.anim = rollAnimTimes;
-                        die.acc = 0;
-                    }
                 }
             }
         }
 
-        function findMegaGroup(cell) {
-            if (!cell || !cell.die || cell.die.isMega) return null;
+        // finds an n x n group of dice with cell somewhere inside it. returns row-major cells or null.
+        // n = 2: every occupied cell must hold a size-1 die.
+        // n = 3: no cell may belong to a hyperdie; at most one megadie is allowed, wholly inside the region.
+        function findBigGroup(cell, n) {
+            if (!cell || !cell.die || cell.die.size >= n) return null;
             const cx = cell.pos.x, cy = cell.pos.y, s = gridStep;
-            const anchors = [[cx, cy], [cx - s, cy], [cx, cy - s], [cx - s, cy - s]];
+            const anchors = [];
+            for (let j = 0; j < n; ++j)
+                for (let i = 0; i < n; ++i)
+                    anchors.push([cx - i * s, cy - j * s]);
+
             for (const [ax, ay] of anchors) {
-                const c00 = cellIndex.get(`${ax},${ay}`);
-                const c10 = cellIndex.get(`${ax + s},${ay}`);
-                const c01 = cellIndex.get(`${ax},${ay + s}`);
-                const c11 = cellIndex.get(`${ax + s},${ay + s}`);
-                if (c00 && c10 && c01 && c11 &&
-                    c00.die && !c00.die.isMega &&
-                    c10.die && !c10.die.isMega &&
-                    c01.die && !c01.die.isMega &&
-                    c11.die && !c11.die.isMega) {
-                    return [c00, c10, c01, c11];
+                const found = [];
+                let ok = true;
+                for (let r = 0; r < n && ok; ++r)
+                    for (let c = 0; c < n && ok; ++c) {
+                        const cl = cellIndex.get(`${ax + c * s},${ay + r * s}`);
+                        if (!cl || !cl.die) { ok = false; break; }
+                        found[r * n + c] = cl;
+                    }
+                if (!ok) continue;
+
+                if (n == 2) {
+                    if (found.every(c => c.die.size == 1)) return found;
+                    continue;
                 }
+
+                // n == 3: reject any hyperdie; allow at most one megadie, wholly inside the region
+                let bad = false, megaCount = 0;
+                for (const d of new Set(found.map(c => c.die))) {
+                    if (d.size == 3) { bad = true; break; }
+                    if (d.size == 2) {
+                        if (++megaCount > 1 || !d.occupiedCells.every(oc => found.includes(oc))) { bad = true; break; }
+                    }
+                }
+                if (!bad) return found;
             }
             return null;
         }
 
         function actionColor() {
             const a = actions.find(x => x.symbol === action);
-            return a ? a.color : null;
+            return a ? a.record.face : null;
         }
 
-        function isActionTarget(die) {
+        // derived from UPGRADES: which die flags exist, and which upgrade symbol sets which flag
+        const FUNCTIONAL = UPGRADES.filter(u => u.axis == 'functional').map(u => u.flag);
+        const ALL_FLAGS = [...FUNCTIONAL, 'timeDie'];
+        const upgradeFlag = new Map(UPGRADES.filter(u => u.flag).map(u => [u.symbol, u.flag]));
+
+        function upgradePrice(die) {
+            return PRICE_MULT[die.size] * actions.find(a => a.symbol == action).price;
+        }
+
+        function isActionLegal(die) {
             if (!die) return false;
-            let ok;
-            switch (action) {
-                case ENABLE_CLEAN: ok = die.edgeBonus || die.rollOthers || die.autoRoll || die.doubleDie || die.echoRoll; break;
-                case ENABLE_EDGE_BONUS: ok = !die.edgeBonus; break;
-                case ENABLE_ROLL_OTHERS: ok = !die.rollOthers; break;
-                case ENABLE_AUTOROLL: ok = !die.autoRoll; break;
-                case ENABLE_DOUBLEDIE: ok = !die.doubleDie; break;
-                case ENABLE_ECHOROLL: ok = !die.echoRoll; break;
-                default: return false;
+            // clean on a big die dissolves it, so it is legal regardless of flags
+            if (action == ENABLE_CLEAN) return die.isBig || ALL_FLAGS.some(f => die[f]);
+            const flag = upgradeFlag.get(action);
+            if (!flag) return false;
+            if (action == ENABLE_EDGE_BONUS) return !die[flag] && hasFreeEdge(die);
+            return !die[flag];
+        }
+
+        function canAffordAction(die) {
+            return score >= upgradePrice(die);
+        }
+
+        // the die size the selected action grants (Mega/Hyper), or 0 if it's not a size upgrade
+        function wantedSize() {
+            const rec = UPGRADES.find(u => u.symbol == action && u.axis == 'size');
+            return rec ? rec.grants : 0;
+        }
+
+        // the two situations where the ding fires: interrupting a roll (updateDie), or an
+        // unaffordable-but-legal upgrade attempt (here and the clean-dissolve path)
+        function ding() {
+            playDing();
+            spawnSparks(scaledCursor);
+        }
+
+        function tryApplyUpgrade(die) {
+            if (!isActionLegal(die)) return false;
+            if (!canAffordAction(die)) { ding(); return false; }
+            const act = actions.find(a => a.symbol == action);
+            if (action == ENABLE_CLEAN) {
+                for (const f of ALL_FLAGS) die[f] = false;
+            } else {
+                const flag = upgradeFlag.get(action);
+                if (FUNCTIONAL.includes(flag)) for (const f of FUNCTIONAL) die[f] = false;
+                die[flag] = true;
             }
-            if (!ok) return false;
-            if (die.isMega) {
-                const act = actions.find(a => a.symbol === action);
-                if (!act || score < 5 * act.price) return false;
-            }
+            die.syncStyle();
+            score -= PRICE_MULT[die.size] * act.use();
+            action = null;
             return true;
         }
 
         function updateCell(cell, delta) {
-            if (cell.die && cell.die.isMega && cell.die.occupiedCells[0] !== cell) return;
+            // a big die is updated once, from its anchor cell — but any of its cells may seed a bigger group
+            const follower = cell.die && cell.die.isBig && cell.die.occupiedCells[0] !== cell;
 
-            if (action == ENABLE_MEGADIE && click && cell.bb.contains(scaledCursor)) {
-                const found = findMegaGroup(cell);
+            const wanted = wantedSize();
+            if (wanted && click && cell.bb.contains(scaledCursor)) {
+                const found = findBigGroup(cell, wanted);
                 if (found) {
-                    score -= actions.filter(a => a.symbol == action)[0].use();
+                    const act = actions.find(a => a.symbol == action);
+                    if (score < act.price) { ding(); click = false; return; }
+                    score -= act.use();
                     action = null;
-                    const megaDie = new MegaDie(found, cellSize);
-                    for (const c of found) c.die = megaDie;
-                    megaDie.cell = found[0];
+                    for (const c of found) c.value = null;
+                    const bigDie = new BigDie(found, wanted);
+                    for (const c of found) c.die = bigDie;
+                    bigDie.cell = found[0];
                     click = false;
                 }
             }
 
-            if (action == ENABLE_CLEAN && click && cell.die && cell.die.isMega && cell.die.occupiedCells[0] === cell && cell.die.bb.contains(scaledCursor)) {
-                score -= actions.filter(a => a.symbol == action)[0].use();
-                action = null;
-                const occupied = cell.die.occupiedCells;
-                for (const c of occupied) {
-                    c.value = null;
-                    const d = new Die(c.pos, cellSize);
-                    c.die = d;
-                    d.roll();
+            if (follower) return;
+
+            if (action == ENABLE_CLEAN && click && cell.die && cell.die.isBig && cell.die.occupiedCells[0] === cell && cell.die.bb.contains(scaledCursor)) {
+                if (canAffordAction(cell.die)) {
+                    const cleanAction = actions.find(a => a.symbol == action);
+                    score -= PRICE_MULT[cell.die.size] * cleanAction.use();
+                    action = null;
+                    const occupied = cell.die.occupiedCells;
+                    for (const c of occupied) {
+                        c.value = null;
+                        const d = new Die(c.pos, cellSize);
+                        c.die = d;
+                        d.roll();
+                    }
+                    click = false;
+                } else {
+                    // consume the click here too, or the fall-through updateDie/roll() below
+                    // would re-check the same unaffordable die and ding a second time
+                    ding();
+                    click = false;
                 }
-                click = false;
             }
 
             const price = buyPrice(cell.dist)
@@ -719,6 +821,36 @@
             return n?.die?.value;
         }
 
+        // true if any outward neighbour cell of the die holds no die - i.e. the die still has a
+        // free connection for edgeBonus to pay out on. cells always exist around a placed die
+        // (the Cell.die setter creates them), so the test is !c.die, never !c.
+        function hasFreeEdge(die) {
+            return die.neighborCells.some(c => !c.die);
+        }
+
+        // the 8-neighbourhood of a die's footprint, diagonals included - probes cellIndex
+        // directly on the gridStep lattice (chaining .neighbors is awkward and null-prone for
+        // diagonals), then drops anything inside the footprint and dedupes.
+        const RING_OFFSETS = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+        function ringCells(die) {
+            const inside = new Set(die.footprint);
+            const out = [];
+            for (const cell of die.footprint)
+                for (const [dx, dy] of RING_OFFSETS) {
+                    const c = cellIndex.get(`${cell.pos.x + dx * gridStep},${cell.pos.y + dy * gridStep}`);
+                    if (c && !inside.has(c) && !out.includes(c)) out.push(c);
+                }
+            return out;
+        }
+
+        // steps once from `cell` in `dir`, then skips over further cells still on the same die — a
+        // big die spans several cells, and walking across it should count as a single step, not n
+        function nextDistinctCell(cell, dir, lastDie) {
+            let n = cell.neighbors[dir];
+            while (n && n.die && n.die === lastDie) n = n.neighbors[dir];
+            return n;
+        }
+
         // Builds an ordered array of die objects along an axis, with scoringDie at its spatial position.
         // anchorA/dirA is one side, anchorB/dirB is the opposite side.
         // Returns { lineDice, dieIndex } — megadie deduped (counts once).
@@ -728,16 +860,14 @@
             let lastDie = null;
             while (neighborValue(n) != null) {
                 if (n.die !== lastDie) { forward.push(n.die); lastDie = n.die; }
-                n = n.neighbors[dirA];
-                while (n && n.die && n.die === lastDie) n = n.neighbors[dirA];
+                n = nextDistinctCell(n, dirA, lastDie);
             }
             const backward = [];
             n = anchorB.neighbors[dirB];
             lastDie = null;
             while (neighborValue(n) != null) {
                 if (n.die !== lastDie) { backward.push(n.die); lastDie = n.die; }
-                n = n.neighbors[dirB];
-                while (n && n.die && n.die === lastDie) n = n.neighbors[dirB];
+                n = nextDistinctCell(n, dirB, lastDie);
             }
             const lineDice = [...forward.reverse(), scoringDie, ...backward];
             return { lineDice, dieIndex: forward.length };
@@ -763,112 +893,76 @@
             return null;
         }
 
+        // 4 x [cornerCell, dirA, dirB]: TL TOP,LEFT · TR TOP,RIGHT · BR BOTTOM,RIGHT · BL BOTTOM,LEFT
+        // driven by die.size/die.footprint, so a plain die (n=1, footprint=[cell]) reports its own
+        // cell for all four corners and a big die reports its four actual corner cells
+        function corners(die) {
+            const n = die.size, c = die.footprint;
+            return [
+                [c[0], TOP, LEFT],
+                [c[n - 1], TOP, RIGHT],
+                [c[n * n - 1], BOTTOM, RIGHT],
+                [c[n * (n - 1)], BOTTOM, LEFT],
+            ];
+        }
+
+        // 4 arrays of outward neighbor cells: TOP row's TOP, RIGHT col's RIGHT, BOTTOM row's BOTTOM, LEFT col's LEFT (n entries each)
+        function sides(die) {
+            const n = die.size, c = die.footprint;
+            const row = i => c.slice(i * n, i * n + n);
+            const col = j => Array.from({ length: n }, (_, i) => c[i * n + j]);
+            return [
+                row(0).map(x => x.neighbors[TOP]),
+                col(n - 1).map(x => x.neighbors[RIGHT]),
+                row(n - 1).map(x => x.neighbors[BOTTOM]),
+                col(0).map(x => x.neighbors[LEFT]),
+            ];
+        }
+
+        // 2n spines as [cellA, dirA, cellB, dirB]: one per column (TOP/BOTTOM), one per row (LEFT/RIGHT).
+        // at n=1 this is exactly [[c, TOP, c, BOTTOM], [c, LEFT, c, RIGHT]] — the die's own two spines.
+        function axes(die) {
+            const n = die.size, c = die.footprint;
+            const result = [];
+            for (let j = 0; j < n; ++j) result.push([c[j], TOP, c[n * (n - 1) + j], BOTTOM]);
+            // rows walk RIGHT first, then LEFT: the edgeBonus clause is asymmetric between the two
+            // counting loops, so the order is load-bearing and must match the original single-die walk
+            for (let i = 0; i < n; ++i) result.push([c[i * n + n - 1], RIGHT, c[i * n], LEFT]);
+            return result;
+        }
+
+        // converts a time die's final gain to seconds instead of score, for the one shared tail
+        // of dieScored regardless of die size.
+        // returns true if the gain was diverted (caller must not add it to score / scoreSample).
+        function scoreTimeDie(die, gain) {
+            if (!die.timeDie || gameMode != TIMED) return false;
+
+            const seconds = gain * timeEfficiency;
+            timeLeft += seconds * 1000;
+            timeEfficiency *= Math.pow(0.99, seconds);
+            pop('+' + seconds.toFixed(1) + 's', die.pos, 4, gain);
+            spawnPips(die, gain);        // pips fly to the timer bar, not the score
+            return true;
+        }
+
+        // one scoring path for every die size: a single die is the n=1 case of the general form
+        // (footprint = [cell], one column, one row), so blocks/cross/sets/straights are each one
+        // loop over corners(die)/sides(die)/axes(die) regardless of die.size.
         function dieScored(die) {
-            if (die.isMega) {
-                const c00 = die.occupiedCells[0], c10 = die.occupiedCells[1], c01 = die.occupiedCells[2], c11 = die.occupiedCells[3];
-
-                let gain = die.value * 10;
-                pop('+' + die.value + '×10', die.pos, 0, gain);
-
-                let floor = 0;
-                let squares = 0;
-
-                // blocks: a 2x2 square of matching dice hanging off each corner of the megadie
-                const corners = [[c00, TOP, LEFT], [c10, TOP, RIGHT], [c11, BOTTOM, RIGHT], [c01, BOTTOM, LEFT]];
-                for (const [c, dA, dB] of corners) {
-                    if (neighborValue(c.neighbors[dA]) == die.value
-                        && neighborValue(c.neighbors[dB]) == die.value
-                        && neighborValue(c.neighbors[dA]?.neighbors[dB]) == die.value) {
-                        squares++;
-                    }
-                }
-
-                if (squares > 0) {
-                    gain += die.value * squares * 8;
-                    floor = 3;
-                    pop((squares == 1 ? 'Block' : ['', 'One', 'Two', 'Three', 'Four'][squares] + ' blocks') + ' of ' + die.value + 's', die.pos, 3 + squares * 2, die.value * squares * 8);
-                }
-
-                // cross: every cardinal side of the megadie span has at least one matching die
-                const sides = [
-                    [c00.neighbors[TOP], c10.neighbors[TOP]],
-                    [c10.neighbors[RIGHT], c11.neighbors[RIGHT]],
-                    [c01.neighbors[BOTTOM], c11.neighbors[BOTTOM]],
-                    [c00.neighbors[LEFT], c01.neighbors[LEFT]]
-                ];
-                if (squares < 2 && sides.every(side => side.some(n => neighborValue(n) == die.value))) {
-                    floor = 2 + squares / 2;
-                    gain += die.value * 9;
-                    pop('Cross of ' + die.value + 's', die.pos, 6, die.value * 9);
-                }
-
-                // pairs/sets/straights along all 4 parallel spines (2 per axis direction)
-                const axes = [
-                    [c00, TOP, c01, BOTTOM],
-                    [c10, TOP, c11, BOTTOM],
-                    [c00, LEFT, c10, RIGHT],
-                    [c01, LEFT, c11, RIGHT],
-                ];
-                for (const [ca, da, cb, db] of axes) {
-                    let s = 0;
-
-                    let n = ca.neighbors[da];
-                    let lastCountedDie = null;
-                    while (s < 4 && neighborValue(n) == die.value) {
-                        ++s;
-                        lastCountedDie = n.die;
-                        n = n.neighbors[da];
-                        while (n && n.die && n.die === lastCountedDie) n = n.neighbors[da];
-                    }
-
-                    n = cb.neighbors[db];
-                    lastCountedDie = null;
-                    while (s < 4 && neighborValue(n) == die.value) {
-                        ++s;
-                        lastCountedDie = n.die;
-                        n = n.neighbors[db];
-                        while (n && n.die && n.die === lastCountedDie) n = n.neighbors[db];
-                    }
-
-                    if (s > floor) {
-                        gain += die.value * (2 * s - 1);
-                        pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos, s, die.value * (2 * s - 1));
-                    }
-                }
-
-                for (const [ca, da, cb, db] of axes) {
-                    const { lineDice, dieIndex } = collectLineDice(die, ca, da, cb, db);
-                    const st = checkStraight(lineDice, dieIndex);
-                    if (st) {
-                        gain += st.bonus;
-                        const label = st.len >= 6 ? 'Legendary Straight!' : st.len === 5 ? 'Large Straight!' : 'Small Straight!';
-                        pop(label, die.pos, st.len + 3, st.bonus);
-                        setTimeout(() => { for (const d of st.dice) d.roll(); }, 600);
-                    }
-                }
-
-                if (die.doubleDie) { const doubleBonus = gain; gain *= 2; pop('×2', die.pos, 5, doubleBonus); }
-
-                spawnPips(die, gain);
-                scoreSample += gain;
-
-                score += gain;
-                return;
-            }
-
-            let gain = die.value;
-            pop('+' + die.value, die.pos, 0, die.value);
+            const mult = BASE_MULT[die.size];
+            let gain = die.value * mult;
+            pop(mult == 1 ? '+' + die.value : '+' + die.value + '×' + mult, die.pos, 0, gain);
 
             let floor = 0;
             let squares = 0;
 
-            for (let i = TOP; i <= LEFT; ++i) {
-                let sideA = neighborValue(die.cell.neighbors[i]);
-                let sideB = neighborValue(die.cell.neighbors[(i + 1) % (LEFT + 1)]);
-                let diag = neighborValue(die.cell.neighbors[i]?.neighbors[(i + 1) % (LEFT + 1)]);
-
-                if (sideA == sideB && sideB == diag && diag == die.value) {
-                    squares++
+            // blocks: a 2x2 square of matching dice hanging off each corner of the die
+            const dieCorners = corners(die);
+            for (const [c, dA, dB] of dieCorners) {
+                if (neighborValue(c.neighbors[dA]) == die.value
+                    && neighborValue(c.neighbors[dB]) == die.value
+                    && neighborValue(c.neighbors[dA]?.neighbors[dB]) == die.value) {
+                    squares++;
                 }
             }
 
@@ -878,45 +972,48 @@
                 pop((squares == 1 ? 'Block' : ['', 'One', 'Two', 'Three', 'Four'][squares] + ' blocks') + ' of ' + die.value + 's', die.pos, 3 + squares * 2, die.value * squares * 8);
             }
 
-            if (squares < 2 && die.cell.neighbors.every(n => neighborValue(n) == die.value)) {
+            // cross: every cardinal side of the die's span has at least one matching die
+            const dieSides = sides(die);
+            if (squares < 2 && dieSides.every(side => side.some(n => neighborValue(n) == die.value))) {
                 floor = 2 + squares / 2;
                 gain += die.value * 9;
                 pop('Cross of ' + die.value + 's', die.pos, 6, die.value * 9);
             }
 
-            for (let i = TOP; i < BOTTOM; ++i) {
-                let n = die.cell.neighbors[i];
-
+            // pairs/sets/straights along all parallel spines
+            const dieAxes = axes(die);
+            for (const [ca, da, cb, db] of dieAxes) {
                 let s = 0;
                 let lastCountedDie = null;
+
+                let n = ca.neighbors[da];
                 while (s < 4 && ((die.edgeBonus && neighborValue(n) == null) || neighborValue(n) == die.value)) {
                     ++s;
                     if (die.edgeBonus) break;
                     lastCountedDie = n.die;
-                    n = n.neighbors[i];
-                    while (n && n.die && n.die === lastCountedDie) n = n.neighbors[i];
+                    n = nextDistinctCell(n, da, lastCountedDie);
                 }
 
-                n = die.cell.neighbors[(i + 2) % (LEFT + 1)]
+                n = cb.neighbors[db];
                 lastCountedDie = null;
-
                 while (s < 4 && ((die.edgeBonus && neighborValue(n) == null) || neighborValue(n) == die.value)) {
                     ++s;
                     if (die.edgeBonus && neighborValue(n) == null) break;
                     lastCountedDie = n.die;
-                    n = n.neighbors[(i + 2) % (LEFT + 1)]
-                    while (n && n.die && n.die === lastCountedDie) n = n.neighbors[(i + 2) % (LEFT + 1)]
+                    n = nextDistinctCell(n, db, lastCountedDie);
                 }
 
                 if (s > floor) {
                     gain += die.value * (2 * s - 1);
-                    pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', die.pos.add(die.cell.neighbors[i].pos).scale(.5), s, die.value * (2 * s - 1))
+                    // midpoint between the die and the spine's first neighbor — spreads a big die's
+                    // labels along the spine that earned them instead of stacking them at the centre
+                    const anchor = die.pos.add(ca.neighbors[da].pos).scale(.5);
+                    pop(['', 'Pair', 'Set', 'Quad', 'Five'][s] + ' of ' + die.value + 's', anchor, s, die.value * (2 * s - 1));
                 }
             }
 
-            for (let i = TOP; i < BOTTOM; ++i) {
-                const opp = (i + 2) % (LEFT + 1);
-                const { lineDice, dieIndex } = collectLineDice(die, die.cell, i, die.cell, opp);
+            for (const [ca, da, cb, db] of dieAxes) {
+                const { lineDice, dieIndex } = collectLineDice(die, ca, da, cb, db);
                 const st = checkStraight(lineDice, dieIndex);
                 if (st) {
                     gain += st.bonus;
@@ -927,6 +1024,8 @@
             }
 
             if (die.doubleDie) { const doubleBonus = gain; gain *= 2; pop('×2', die.pos, 5, doubleBonus); }
+
+            if (scoreTimeDie(die, gain)) return;
 
             spawnPips(die, gain);
             scoreSample += gain;
@@ -943,7 +1042,74 @@
             return sprite.isLive;
         }
 
+        // full restart, in place — cells/cellIndex/actions/ui are module-level consts and get mutated, not rebound
+        function resetGame() {
+            cells.length = 0;
+            cellIndex.clear();
+            new Cell(new Point(0, 0), gridStep);
+
+            buyDiePrice = 7.5;
+            score = buyPrice(0);
+            scoreSample = scoreSampleAcc = scoreGain = scoreGainTimer = 0;
+
+            sprites.length = pipParticles.length = sparkParticles.length = 0;
+
+            for (const a of actions) { a.price = a.record.price; a.shown = false; }
+            ui.length = 0;
+            ui.push(modeButton, muteButton);
+            layoutTopRow();
+
+            action = null;
+            timeLeft = GAME_DURATION;
+            timeEfficiency = 1;
+            gameOver = false;
+            lastRecordedTs = null;
+            gameOverLayoutCache = null;
+            dragRolled.clear();
+            currentZoom = defaultZoom;
+            cameraX = cameraY = 0;
+        }
+
+        // converts a live or finished timed game into an endless one, preserving everything else
+        function goEndless() {
+            gameMode = ENDLESS;
+            gameOver = false;
+
+            // a big die occupies several cells but must only be stripped once
+            const stripped = new Set();
+            for (const cell of cells) {
+                const die = cell.die;
+                if (die && !stripped.has(die)) {
+                    stripped.add(die);
+                    die.timeDie = false;
+                    die.syncStyle();
+                }
+            }
+
+            // hide (and forget selection of) any timed-only action, by property rather than by symbol
+            for (const a of actions) {
+                if (!a.timedOnly) continue;
+                a.shown = false;
+                const idx = ui.indexOf(a.button);
+                if (idx >= 0) ui.splice(idx, 1);
+                if (action == a.symbol) action = null;   // keyboard can select before reveal
+            }
+
+            layoutTopRow();
+        }
+
         function update(delta) {
+            toggle = (toggle + 1) % 20;
+
+            if (gameMode == TIMED && !gameOver) {
+                timeLeft -= delta;
+                if (timeLeft <= 0) {
+                    timeLeft = 0;
+                    gameOver = true;
+                    recordScore(score);
+                }
+            }
+
             let targetZoom = defaultZoom;
             let targetCamX = 0, targetCamY = 0;
             const placedDice = cells.filter(c => c.die != null);
@@ -958,7 +1124,7 @@
                 minX -= gridStep; minY -= gridStep; maxX += gridStep; maxY += gridStep;
                 const boxW = maxX - minX;
                 const boxH = maxY - minY;
-                targetZoom = Math.min(ctx.canvas.width / boxW, ctx.canvas.height / boxH, defaultZoom);
+                targetZoom = Math.min(ctx.canvas.width / boxW, fieldH / boxH, defaultZoom);
                 targetCamX = (minX + maxX) / 2;
                 targetCamY = (minY + maxY) / 2;
             }
@@ -967,18 +1133,25 @@
             cameraX += (targetCamX - cameraX) * ease;
             cameraY += (targetCamY - cameraY) * ease;
 
-            scaledCursor.x = cursor.x / currentZoom + cameraX;
-            scaledCursor.y = cursor.y / currentZoom + cameraY;
+            const world = screenToWorld(cursor.x + ox, cursor.y + oy);
+            scaledCursor.x = world.x;
+            scaledCursor.y = world.y;
 
             scoreShift.tick(delta);
 
-            for (let action of actions) {
-                if (!action.shown && score > action.price * 2 / 3) {
-                    action.shown = true;
-                    ui.push(action.button);
+            if (!gameOver) {
+                let revealed = false;
+                for (let action of actions) {
+                    if (!action.shown && score > action.price * 2 / 3 && (!action.timedOnly || gameMode == TIMED)) {
+                        action.shown = true;
+                        ui.push(action.button);
+                        revealed = true;
+                    }
                 }
+                if (revealed) layoutTopRow();
             }
 
+            // hud buttons stay live on the game-over screen; Action.click() refuses while gameOver
             for (let i = ui.length - 1; i >= 0; --i) {
                 const btn = ui[i];
                 if (click && btn.bb.contains(cursor.x, cursor.y)) {
@@ -988,7 +1161,16 @@
                 }
             }
 
-            cells.forEach(cell => updateCell(cell, delta));
+            if (!gameOver) {
+                cells.forEach(cell => updateCell(cell, delta));
+            } else if (click) {
+                // only the two game-over buttons are interactive while frozen
+                const L = gameOverLayout();
+                const mx = cursor.x + ox, my = cursor.y + oy;
+                if (L.again.contains(mx, my)) resetGame();
+                else if (L.endless.contains(mx, my)) goEndless();
+            }
+
             sprites = sprites.filter(sprite => updateSprite(sprite, delta));
             for (let p of pipParticles) p.tick(delta);
             pipParticles = pipParticles.filter(p => p.isLive);
@@ -1013,11 +1195,26 @@
             soundOn = !soundOn;
         }
 
+        // asymmetric: timed -> endless preserves the game, endless -> timed restarts it
+        function toggleMode(btn) {
+            if (gameMode == TIMED) {
+                goEndless();
+            } else {
+                gameMode = TIMED;
+                resetGame();
+            }
+        }
+
+        function drawMode(btn) {
+            ctx.fillStyle = btn.bb.contains(cursor.x, cursor.y) ? 'white' : 'silver';
+            ctx.font = (btnSize * .5) + 'pt Georgia';
+            ctx.strokeStyle = 'black';
+            ctext(gameMode == TIMED ? '⏱' : '∞', btn.pos.x, btn.pos.y, 0);
+        }
+
         function drawMute(btn) {
             ctx.fillStyle = btn.bb.contains(cursor.x, cursor.y) ? 'white' : 'silver';
-            ctx.font = btn.bb.height + 'pt Georgia';
-
-            ctx.fillStyle = 'white';
+            ctx.font = (btnSize * .5) + 'pt Georgia';
             ctx.strokeStyle = 'black';
             ctext(soundOn ? '🕪' : '🕨', btn.pos.x, btn.pos.y, 0);
         }
@@ -1025,39 +1222,27 @@
         function renderDie(die) {
             ctx.save();
 
-            if (die.isMega) {
-                if (die.state == IDLE && !die.autoRoll && die.bb.contains(scaledCursor)) {
-                    ctx.fillStyle = 'white';
-                    roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 4);
-                    ctx.fill();
-                }
-                ctx.translate(die.pos.x, die.pos.y);
-                ctx.rotate(die.tilt.value * deg);
-                ctx.scale(die.scale.value, die.scale.value);
-                drawDice(ctx, die.rollingValue, cellSize * 2,
-                    die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : die.doubleDie ? '#2d8a0e' : die.echoRoll ? '#e88000' : null,
-                    die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : die.doubleDie ? '#ffd700' : die.echoRoll ? 'white' : null);
-                ctx.restore();
-                return;
-            }
+            const shiver = die.shiverOffset;
 
-            if (die.state == IDLE && !die.autoRoll && die.bb.contains(scaledCursor)) {
+            if (die.state == IDLE && die.bb.contains(scaledCursor)) {
                 ctx.fillStyle = 'white';
-                roundedRect(ctx, die.bb.x - 5, die.bb.y - 5, die.bb.w + 10, die.bb.h + 10, cellSize / 8);
+                roundedRect(ctx, die.bb.x - 5 + shiver.dx, die.bb.y - 5 + shiver.dy, die.bb.w + 10, die.bb.h + 10, cellSize * die.size / 8);
                 ctx.fill();
             }
 
-            ctx.translate(die.pos.x, die.pos.y);
-            ctx.rotate(die.tilt.value * deg);
+            ctx.translate(die.pos.x + shiver.dx, die.pos.y + shiver.dy);
+            ctx.rotate((die.tilt.value * deg) + (shiver.rot * deg));
             ctx.scale(die.scale.value, die.scale.value);
 
-            drawDice(ctx, die.rollingValue, cellSize,
-                die.autoRoll ? '#d19002' : die.rollOthers ? '#b10e0a' : die.edgeBonus ? '#262ae1' : die.doubleDie ? '#2d8a0e' : die.echoRoll ? '#e88000' : null,
-                die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : die.doubleDie ? '#ffd700' : die.echoRoll ? 'white' : null);
+            drawDice(ctx, die.rollingValue, cellSize * die.size, die.style);
 
-            ctx.fillStyle = 'white';
-            ctx.strokeStyle = 'black';
-            if (die.autoRoll && die.state == IDLE) ctext(die.anim, 0, -cellSize / 4, 0)
+            // upgrade price on every legal big-die target, not just the hovered one
+            if (die.isBig && action && isActionLegal(die)) {
+                ctx.font = (cellSize * die.size / 3.5) + 'px Georgia';
+                ctx.fillStyle = canAffordAction(die) ? 'white' : 'grey';
+                ctx.strokeStyle = 'black';
+                ctext(upgradePrice(die), 0, 0, 0);
+            }
 
             ctx.restore();
         }
@@ -1080,7 +1265,7 @@
                 ctext(price, cell.pos.x, cell.pos.y, 0)
             }
 
-            if (cell.die && (!cell.die.isMega || cell.die.occupiedCells[0] === cell)) renderDie(cell.die)
+            if (cell.die && (!cell.die.isBig || cell.die.occupiedCells[0] === cell)) renderDie(cell.die)
         }
 
         function renderActionHighlight() {
@@ -1089,15 +1274,16 @@
             if (!color) return;
             const pad = 6;
 
-            if (action == ENABLE_MEGADIE) {
+            const wanted = wantedSize();
+            if (wanted) {
                 for (const cell of cells) {
                     if (!cell.bb.contains(scaledCursor)) continue;
-                    const found = findMegaGroup(cell);
+                    const found = findBigGroup(cell, wanted);
                     if (!found) return;
                     const x = found[0].pos.x - cellSize / 2 - pad;
                     const y = found[0].pos.y - cellSize / 2 - pad;
-                    const w = gridStep + cellSize + 2 * pad;
-                    roundedRect(ctx, x, y, w, w, (gridStep + cellSize) / 10);
+                    const w = (wanted - 1) * gridStep + cellSize + 2 * pad;
+                    roundedRect(ctx, x, y, w, w, ((wanted - 1) * gridStep + cellSize) / 10);
                     ctx.lineWidth = cellSize / 15;
                     ctx.strokeStyle = color;
                     ctx.stroke();
@@ -1108,26 +1294,31 @@
 
             for (const cell of cells) {
                 const die = cell.die;
-                if (!die || !die.isMega || die.occupiedCells[0] !== cell) continue;
+                if (!die || !die.isBig || die.occupiedCells[0] !== cell) continue;
                 if (!die.bb.contains(scaledCursor)) continue;
-                if (!isActionTarget(die)) break;
-                roundedRect(ctx, die.bb.x - pad, die.bb.y - pad, die.bb.w + 2 * pad, die.bb.h + 2 * pad, cellSize / 4);
+                if (!isActionLegal(die)) break;
+                roundedRect(ctx, die.bb.x - pad, die.bb.y - pad, die.bb.w + 2 * pad, die.bb.h + 2 * pad, cellSize * die.size / 8);
                 ctx.lineWidth = cellSize / 15;
-                ctx.strokeStyle = color;
+                ctx.strokeStyle = canAffordAction(die) ? color : 'grey';
                 ctx.stroke();
                 return;
             }
 
             for (const cell of cells) {
                 const die = cell.die;
-                if (!die || die.isMega || !die.bb.contains(scaledCursor)) continue;
-                if (!isActionTarget(die)) return;
+                if (!die || die.isBig || !die.bb.contains(scaledCursor)) continue;
+                if (!isActionLegal(die)) return;
                 roundedRect(ctx, die.bb.x - pad, die.bb.y - pad, die.bb.w + 2 * pad, die.bb.h + 2 * pad, cellSize / 8);
                 ctx.lineWidth = cellSize / 15;
-                ctx.strokeStyle = color;
+                ctx.strokeStyle = canAffordAction(die) ? color : 'grey';
                 ctx.stroke();
                 return;
             }
+        }
+
+        function fieldTransform() {
+            ctx.translate(fieldCX - cameraX * currentZoom, fieldCY - cameraY * currentZoom);
+            ctx.scale(currentZoom, currentZoom);
         }
 
         function render() {
@@ -1140,8 +1331,10 @@
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
 
             ctx.save();
-            ctx.translate(ox - cameraX * currentZoom, oy - cameraY * currentZoom);
-            ctx.scale(currentZoom, currentZoom);
+            ctx.beginPath();
+            ctx.rect(0, topInset, ctx.canvas.width, fieldH);
+            ctx.clip();
+            fieldTransform();
 
             renderActionHighlight();
 
@@ -1155,21 +1348,34 @@
                 ctext(sprite.value, sprite.pos.x, sprite.pos.y, sprite.dir + 90 * deg)
             }
 
+            ctx.restore();
+
+            // particles draw outside the field clip so they can fly all the way to the hud anchors,
+            // sliding under the translucent hud band on the way
             ctx.save();
+            fieldTransform();
+
             for (let p of pipParticles) {
                 const pos = p.pos;
                 dot(ctx, pos.x, pos.y, p.radius, p.color);
             }
-            ctx.restore();
 
-            ctx.save();
             for (let p of sparkParticles) {
                 const pos = p.pos;
                 dot(ctx, pos.x, pos.y, p.radius, '#ffd700');
             }
-            ctx.restore();
 
             ctx.restore();
+
+            // hud backdrop
+            ctx.fillStyle = 'rgba(0, 0, 0, .35)';
+            ctx.fillRect(0, 0, ctx.canvas.width, topInset);
+            ctx.strokeStyle = 'rgba(255, 255, 255, .12)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, topInset);
+            ctx.lineTo(ctx.canvas.width, topInset);
+            ctx.stroke();
 
             ctx.save();
             ctx.translate(ox, oy);
@@ -1180,14 +1386,118 @@
 
             ctx.restore();
 
+            renderTimerBar();
+
             ctx.font = '32pt Georgia';
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ltext(score, hudPad, uiLine + scoreBaselineOffset, scoreShift.value * deg);
+
+            if (scoreGain > 0 && scoreGainTimer > 0) {
+                const scoreW = ctx.measureText(score).width;
+                ctx.font = '18pt Georgia';
+                ltext('+' + scoreGain, hudPad + scoreW + 12, uiLine + scoreBaselineOffset, scoreShift.value * deg);
+            }
+
+            renderGameOver();
+        }
+
+        // screen-space, under the top row; hidden entirely in endless mode
+        function renderTimerBar() {
+            if (gameMode != TIMED) return;
+
+            const w = Math.min(ctx.canvas.width - 2 * hudPad, 720);
+            const x = fieldCX - w / 2;
+            const y = topRowH + 6;
+
+            ctx.fillStyle = 'rgba(0, 0, 0, .4)';
+            roundedRect(ctx, x, y, w, barH, barH / 2);
+            ctx.fill();
+
+            const fillW = w * clamp(timeLeft / GAME_DURATION, 0, 1);
+            if (fillW > 0) {
+                ctx.fillStyle = timeLeft < 10000 && toggle > 10 ? '#e8443a' : '#7ad7ff';
+                roundedRect(ctx, x, y, fillW, barH, Math.min(barH / 2, fillW / 2));
+                ctx.fill();
+            }
+        }
+
+        // screen-space layout for the game-over panel and its two buttons (raw canvas pixel coords).
+        // cached: loadScores() hits localStorage + JSON.parse, and this is read every frame while
+        // the game-over screen is up (plus once per click) — compute once per game-over, not per frame.
+        let gameOverLayoutCache = null;
+
+        function gameOverLayout() {
+            if (gameOverLayoutCache) return gameOverLayoutCache;
+
+            const scores = loadScores().sort((a, b) => b.score - a.score);
+            const rows = Math.min(scores.length, 10);
+            const rowH = 26;
+            const listTop = 150;
+            const panelW = 460;
+            const panelH = listTop + rows * rowH + 90;
+            const px = ctx.canvas.width / 2 - panelW / 2;
+            const py = ctx.canvas.height / 2 - panelH / 2;
+            const cx = ctx.canvas.width / 2;
+            const btnW = 190, btnH = 46, btnGap = 16;
+            const btnY = py + panelH - btnH - 26;
+            gameOverLayoutCache = {
+                scores, rows, rowH, listTop, panelW, panelH, px, py, cx,
+                again: new AABB(cx - btnGap / 2 - btnW, btnY, btnW, btnH),
+                endless: new AABB(cx + btnGap / 2, btnY, btnW, btnH),
+            };
+            return gameOverLayoutCache;
+        }
+
+        function renderGameOver() {
+            if (!gameOver) return;
+            const L = gameOverLayout();
+
+            ctx.fillStyle = 'rgba(0, 0, 0, .6)';
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+            roundedRect(ctx, L.px, L.py, L.panelW, L.panelH, 16);
+            ctx.fillStyle = 'rgba(0, 0, 0, .75)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, .2)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
 
             ctx.fillStyle = 'white';
             ctx.strokeStyle = 'black';
+            ctx.font = '36pt Georgia';
+            ctext('Time!', L.cx, L.py + 55, 0);
 
-            if (scoreGain > 0 && scoreGainTimer > 0)
-                ctext('+' + scoreGain, cellSize, 1.5 * cellSize, scoreShift.value * deg)
-            ctext(score, cellSize, cellSize, scoreShift.value * deg)
+            ctx.font = '28pt Georgia';
+            ctext(score, L.cx, L.py + 100, 0);
+
+            ctx.font = '14pt Georgia';
+            for (let i = 0; i < L.rows; ++i) {
+                const row = L.scores[i];
+                const y = L.py + L.listTop + i * L.rowH;
+                ctx.fillStyle = row.ts === lastRecordedTs ? '#7ad7ff' : 'white';
+                ltext('#' + (i + 1), L.px + 30, y, 0);
+                ltext(row.score, L.px + 90, y, 0);
+                ltext(agoString(Date.now() - row.ts), L.px + L.panelW - 150, y, 0);
+            }
+
+            drawGameOverButton(L.again, 'Play again');
+            drawGameOverButton(L.endless, 'Continue in endless');
+        }
+
+        function drawGameOverButton(bb, label) {
+            const hover = bb.contains(cursor.x + ox, cursor.y + oy);
+            roundedRect(ctx, bb.x, bb.y, bb.w, bb.h, 10);
+            ctx.fillStyle = hover ? 'rgba(255, 255, 255, .3)' : 'rgba(255, 255, 255, .12)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, .4)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            ctx.font = '13pt Georgia';
+            ctx.fillStyle = 'white';
+            ctx.strokeStyle = 'black';
+            ctext(label, bb.x + bb.w / 2, bb.y + bb.h / 2 + 5, 0);
         }
 
         function ctext(text, x, y, rot) {
@@ -1205,18 +1515,35 @@
             ctx.restore()
         }
 
+        // left-aligned counterpart to ctext, so the score doesn't drift as its digit count changes
+        function ltext(text, x, y, rot) {
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(rot);
+
+            ctx.lineWidth = 6;
+            ctx.lineJoin = "round";
+            ctx.miterLimit = 2;
+
+            ctx.strokeText(text, 0, 0);
+            ctx.fillText(text, 0, 0)
+            ctx.restore()
+        }
+
         loop(60, update, render);
 
         function loop(fps, update, render) {
             const delta = 1000 / fps;
             let acc = delta;
-            let then = 0;
+            let then = performance.now();
 
             tick();
 
             function tick() {
                 const now = performance.now();
-                acc += now - then;
+                // cap the catch-up: a backgrounded tab would otherwise replay thousands of steps
+                // at once and burn the whole game timer on the next visible frame
+                acc = Math.min(acc + (now - then), 5 * delta);
                 then = now;
 
                 let updated = acc > delta;
@@ -1256,7 +1583,8 @@
             return [can, ctx];
         }
 
-        function drawDice(ctx, value, dieSize, color, pipColor) {
+        function drawDice(ctx, value, dieSize, style) {
+            const { face, pip, aberration } = style || BASE_STYLE;
             const c = dieSize / 2;
 
             ctx.save();
@@ -1264,12 +1592,12 @@
 
             // face
             roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
-            ctx.fillStyle = color || "#ece5c9";
+            ctx.fillStyle = face || "#ece5c9";
             ctx.fill()
 
             // Face highlight
             roundedRect(ctx, dieSize / 40, +dieSize / 40, dieSize - c / 10, dieSize - c / 10, dieSize / 4);
-            ctx.fillStyle = color ? "rgba(255, 255, 255, .2)" : "rgba(255, 255, 255, .5)";
+            ctx.fillStyle = face ? "rgba(255, 255, 255, .2)" : "rgba(255, 255, 255, .5)";
             ctx.fill()
 
             // outline
@@ -1289,27 +1617,32 @@
             const s1 = dieSize / k;
             const s2 = dieSize - s1;
 
-            if (value % 2 == 1) {
-                // middle
-                dot(ctx, c, c, r, pipColor)
-            }
+            // pip centres for this value — the one list both the fill pass and the aberration pass use
+            const pips = [];
+            if (value % 2 == 1) pips.push([c, c]);                    // middle
+            if (value > 1) pips.push([s1, s1], [s2, s2]);              // corners 1 and 3
+            if (value > 3) pips.push([s2, s1], [s1, s2]);              // corners 2 and 4
+            if (value == 6) pips.push([s1, c], [s2, c]);               // mid-sides
 
-            if (value > 1) {
-                // corners 1 and 3
-                dot(ctx, s1, s1, r, pipColor)
-                dot(ctx, s2, s2, r, pipColor)
-            }
+            for (const [x, y] of pips) dot(ctx, x, y, r, pip);
 
-            if (value > 3) {
-                // corners 2 and 4
-                dot(ctx, s2, s1, r, pipColor)
-                dot(ctx, s1, s2, r, pipColor)
-            }
+            if (aberration) {
+                // chromatic aberration: body and pip outlines drawn twice, teal one way and pink the other
+                const d = Math.max(1, dieSize / 100);
+                ctx.lineWidth = dieSize / 60;
 
-            if (value == 6) {
-                // mid-sides
-                dot(ctx, s1, c, r, pipColor)
-                dot(ctx, s2, c, r, pipColor)
+                for (const [shift, strokeColor] of [[d, '#00e5d0'], [-d, '#ff4fa3']]) {
+                    ctx.save();
+                    ctx.translate(shift, 0);
+                    ctx.strokeStyle = strokeColor;
+                    roundedRect(ctx, 0, 0, dieSize, dieSize, dieSize / 10);
+                    ctx.stroke();
+                    for (const [x, y] of pips) {
+                        circle(ctx, x, y, r);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
             }
 
             ctx.restore();
@@ -1358,12 +1691,13 @@
         function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
         class PipParticle {
-            constructor(startPos, targetPos, delay, duration, color) {
+            constructor(startPos, targetPos, delay, duration, color, toTimer) {
                 this.startPos = startPos;
                 this.targetPos = targetPos;
                 this.delay = delay;
                 this.duration = duration;
                 this.color = color;
+                this.toTimer = toTimer;   // flies to the timer bar instead of the score indicator
                 this.age = 0;
 
                 const dx = targetPos.x - startPos.x;
@@ -1385,7 +1719,8 @@
             get pos() {
                 const raw = clamp((this.age - this.delay) / this.duration, 0, 1);
                 const t = fade(raw);
-                const target = new Point((cellSize - ox) / currentZoom + cameraX, (cellSize - oy) / currentZoom + cameraY);
+                const anchor = this.toTimer ? timerAnchor() : scoreAnchor();
+                const target = screenToWorld(anchor.x, anchor.y);
                 const p0x = this.startPos.x + (this.controlPoint.x - this.startPos.x) * t;
                 const p0y = this.startPos.y + (this.controlPoint.y - this.startPos.y) * t;
                 const p1x = this.controlPoint.x + (target.x - this.controlPoint.x) * t;
@@ -1400,14 +1735,16 @@
 
         function spawnPips(die, gain) {
             const count = Math.min(gain, 30);
-            const target = new Point((cellSize - ox) / currentZoom + cameraX, (cellSize - oy) / currentZoom + cameraY);
-            const pipColor = die.autoRoll ? '#b10e0a' : die.rollOthers || die.edgeBonus ? 'white' : die.doubleDie ? '#ffd700' : die.echoRoll ? 'white' : null;
+            const toTimer = die.timeDie && gameMode == TIMED;
+            const anchor = toTimer ? timerAnchor() : scoreAnchor();
+            const target = screenToWorld(anchor.x, anchor.y);
+            const pipColor = toTimer ? '#7ff3e6' : die.style.pip;
             for (let i = 0; i < count; i++) {
                 const startX = die.pos.x + (Math.random() - 0.5) * cellSize * 0.3;
                 const startY = die.pos.y + (Math.random() - 0.5) * cellSize * 0.3;
                 const delay = Math.random() * 200;
                 const duration = 600 + Math.random() * 300;
-                pipParticles.push(new PipParticle(new Point(startX, startY), target, delay, duration, pipColor));
+                pipParticles.push(new PipParticle(new Point(startX, startY), target, delay, duration, pipColor, toTimer));
             }
         }
 
