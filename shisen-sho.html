@@ -75,9 +75,9 @@
         const sq32 = Math.sqrt(3) / 2;
         const { random, sin, cos, max, sign, abs } = Math;
 
-        const ctx = fullscreenCanvas();
-
-        const { width, height } = ctx.canvas;
+        let ctx, width, height, ox, oy, cellw, cellh, margin, gap, tilew, tileh;
+        let movesHintBox, timerHintBox, hintsHintBox, hintButton, pauseButton;
+        const bitmaps = new Map();
 
         const n = 8;
         const m = 21;
@@ -85,20 +85,51 @@
         let num = n * m;
         const spriteSize = [150, 200];
 
-        const [ox, oy, cellw, cellh, margin, gap, tilew, tileh] = (() => {
-            const aspect = spriteSize[0] / spriteSize[1];
 
-            const g = .2
-            let w = width / (2 + (m - 1) * g + m);
-            let h = w / aspect;
 
-            if (h * (2 * aspect + (n - 1) * aspect * g + n) > height) {
-                h = height / (2 * aspect + (n - 1) * aspect * g + n);
-                w = h * aspect;
+        function getTo(doSomething) {
+            let timer;
+            return () => {
+
+                if (timer) clearTimeout(timer)
+                timer = setTimeout(doSomething, 50);
             }
+        }
 
-            return [(width - w * (2 + (m - 1) * g + m)) / 2, (height - h * (2 * aspect + (n - 1) * aspect * g + n)) / 2, w, h, w, w * g, w * 1.1, h * 1.2];
-        })();
+        function adjustSize() {
+            if (ctx)
+                document.body.removeChild(ctx.canvas)
+
+
+            ctx = fullscreenCanvas();
+            width = ctx.canvas.width;
+            height = ctx.canvas.height;
+            [ox, oy, cellw, cellh, margin, gap, tilew, tileh] = (() => {
+                const aspect = spriteSize[0] / spriteSize[1];
+
+                const g = .2
+                let w = width / (2 + (m - 1) * g + m);
+                let h = w / aspect;
+
+                if (h * (2 * aspect + (n - 1) * aspect * g + n) > height) {
+                    h = height / (2 * aspect + (n - 1) * aspect * g + n);
+                    w = h * aspect;
+                }
+
+                return [(width - w * (2 + (m - 1) * g + m)) / 2, (height - h * (2 * aspect + (n - 1) * aspect * g + n)) / 2, w, h, w, w * g, w * 1.1, h * 1.2];
+            })();
+
+            const s = cellw / 2;
+            const bx = width - ox - margin - s;
+            const by = oy + margin - s / 3.5 - s;
+
+            movesHintBox = new AABB(ox + margin, oy - 1.3 * s + margin, 4.5 * s, s);
+            timerHintBox = new AABB(width / 2 - 2 * s, oy - 1.3 * s + margin, 4 * s, s);
+            hintsHintBox = new AABB(width - 5 * s - margin, oy - 1.3 * s + margin, 5 * s, s);
+
+            hintButton = new AABB(bx, by, s, s);
+            pauseButton = new AABB(width / 2 + 2 * s, by, s, s);
+        }
 
         class AABB {
             constructor(x, y, w, h) {
@@ -206,17 +237,8 @@
         const timerToggle = new Toggle(timerHintVisibility, .2, .8);
         const hintsToggle = new Toggle(hintsHintVisibility, .2, .8);
 
-        const s = cellw / 2;
-        const x = width - ox - margin - s;
-        const y = oy + margin - s / 3.5 - s;
-
-        const movesHintBox = new AABB(ox + margin, oy - 1.3 * s + margin, 4.5 * s, s);
-        const timerHintBox = new AABB(width / 2 - 2 * s, oy - 1.3 * s + margin, 4 * s, s);
-        const hintsHintBox = new AABB(width - 5 * s - margin, oy - 1.3 * s + margin, 5 * s, s);
-
-        const hintButton = new AABB(x, y, s, s);
-        const pauseButton = new AABB(width / 2 + 2 * s, y, s, s);
-
+        let images;
+        window.addEventListener('resize', getTo(resize));
         load();
 
         function load() {
@@ -230,13 +252,15 @@
             Promise.all(loaded).then(init);
         }
 
-        function init(images) {
+        function init(sprites) {
+
+            if (sprites) images = sprites;
+            resize();
+
             const tiles = [];
 
             for (let img of images) {
-                const ctx = new OffscreenCanvas(tilew, tileh).getContext('2d')
-                const card = generateTile(ctx, img);
-                tiles.push(card, card, card, card);
+                tiles.push(img, img, img, img);
             }
 
             shuffle(tiles);
@@ -253,6 +277,15 @@
             moves = getMoves()
             run();
         };
+
+        function resize() {
+            adjustSize();
+            bitmaps.clear();
+            for (let img of images) {
+                const bctx = new OffscreenCanvas(tilew, tileh).getContext('2d');
+                bitmaps.set(img, generateTile(bctx, img));
+            }
+        }
 
         function run() {
             loop(60, update, render);
@@ -490,13 +523,19 @@
                         const x = (ox + margin + j * (cellw + gap)) | 0;
                         const y = (oy + margin + i * (cellh + gap)) | 0;
 
-                        if ((isPaused && Math.abs(i - pauseTileI) + Math.abs(j - pauseTileJ) < (frame-pausedChange))||(!isPaused && Math.abs(i - pauseTileI) + Math.abs(j - pauseTileJ) > (frame-pausedChange)))
-                            ctx.drawImage(grid[pauseTileI][pauseTileJ], x, y);
-                        else
-                            ctx.drawImage(grid[i][j], x, y);
+                        if ((isPaused && Math.abs(i - pauseTileI) + Math.abs(j - pauseTileJ) < (frame - pausedChange)) || (!isPaused && Math.abs(i - pauseTileI) + Math.abs(j - pauseTileJ) > (frame - pausedChange)))
+                            ctx.drawImage(bitmaps.get(grid[pauseTileI][pauseTileJ]), x, y);
+                        else {
+                            ctx.save();
+                            const hover = (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh);
+                            const active = selected && i == selected[0] && j == selected[1];
+                            if (active || hover) ctx.translate(-cellw / 30, -cellw / 15);
+                            ctx.drawImage(bitmaps.get(grid[i][j]), x, y);
 
-                        if ((selected && i == selected[0] && j == selected[1]) || (cursor.x >= x && cursor.y >= y && cursor.x <= x + cellw && cursor.y <= y + cellh)) {
-                            drawFrame(x, y, cellw, cellh, cellw / 30);
+                            if (active || hover) {
+                                drawFrame(x, y, cellw, cellh, cellw / 30);
+                            }
+                            ctx.restore()
                         }
                     }
                 }
@@ -558,6 +597,7 @@
                 }
 
                 function drawButton(btn, text, fg, bg, hover) {
+                    ctx.save()
                     roundedRect(ctx, btn.x, btn.y, btn.w, btn.h, s / 15);
 
                     ctx.fillStyle = bg;
@@ -574,7 +614,7 @@
                     if (hover && btn.contains(cursor)) {
                         drawFrame(btn.x, btn.y, btn.w, btn.h, s / 15);
                     }
-
+                    ctx.restore()
                 }
 
                 ctx.restore();
@@ -582,16 +622,12 @@
                 function drawFrame(x, y, w, h, r) {
                     ctx.save();
                     roundedRect(ctx, x, y, w, h, r);
-                    ctx.strokeStyle = 'white';
+                    ctx.strokeStyle = '#45ab84';
                     ctx.lineWidth = r;
                     ctx.shadowColor = 'white';
                     ctx.shadowBlur = r
                     ctx.stroke();
                     ctx.restore();
-
-                    ctx.lineWidth = r / 3;
-                    ctx.strokeStyle = 'gold'
-                    ctx.stroke();
                 }
 
                 if (moves.length == 0) {
